@@ -1,0 +1,81 @@
+/* App.css */
+.app { min-height: 100vh; }
+
+.app-splash {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .75rem;
+}
+
+.app-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--red-bg);
+  border: 1px solid var(--red-bdr);
+  color: var(--red);
+  font-size: 13px;
+  padding: .65rem 1.25rem;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+.app-error button {
+  color: var(--red);
+  opacity: .7;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+.app-error button:hover { opacity: 1; }
+
+/* offline / backend not running screen */
+.app-offline {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+.offline-card {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: var(--r-xl);
+  padding: 2.5rem;
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+}
+.offline-icon {
+  font-size: 2.5rem;
+  display: block;
+  margin-bottom: 1rem;
+}
+.offline-title {
+  font-family: var(--font-d);
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: .5rem;
+}
+.offline-msg {
+  font-size: 13px;
+  color: var(--text2);
+  line-height: 1.6;
+}
+.offline-code {
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: var(--r);
+  padding: 1rem 1.25rem;
+  font-size: 12px;
+  line-height: 1.8;
+  color: var(--green);
+  text-align: left;
+  margin-top: 1rem;
+  white-space: pre;
+  overflow-x: auto;
+  font-family: 'Courier New', monospace;
+}
