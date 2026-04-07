@@ -1,0 +1,128 @@
+/* PaperView.css */
+.pv { display: flex; flex-direction: column; min-height: 100vh; background: var(--bg3); font-family: var(--font-b); position: relative; z-index: 10; }
+
+.pv-header {
+  display: flex; align-items: center; gap: 2rem; padding: 1.5rem 3rem;
+  background: rgba(255, 255, 255, 0.9); backdrop-filter: blur(16px);
+  border-bottom: 1px solid var(--bg4); flex-shrink: 0;
+  position: sticky; top: 0; z-index: 100;
+  box-shadow: 0 4px 30px rgba(0,0,0,0.03);
+}
+.pv-title-wrap { flex: 1; }
+.pv-title { font-family: var(--font-d); font-size: 24px; font-weight: 800; color: var(--text); letter-spacing: -0.01em; }
+.pv-meta { font-size: 14px; color: var(--text3); font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 4px; }
+.pv-actions { display: flex; gap: 1rem; }
+
+.pv-content { 
+  flex: 1; padding: 3rem 1.5rem 6rem; overflow-y: auto; 
+  background-image: var(--paper-dots); background-size: 32px 32px;
+}
+
+/* ── THE PRINTED SHEET ── */
+.pv-sheet {
+  max-width: 900px; margin: 0 auto; background: #fff;
+  border-radius: var(--r-xl); padding: 5rem 6rem;
+  box-shadow: 0 40px 100px rgba(0,0,0,0.08); border: 1px solid var(--bg4);
+  position: relative;
+}
+
+/* Notebook Margin */
+.pv-sheet::before {
+  content: ''; position: absolute; left: 4rem; top: 0; bottom: 0;
+  width: 1px; background: rgba(239, 68, 68, 0.15); pointer-events: none;
+}
+
+.pv-question {
+  margin-bottom: 4rem; position: relative; z-index: 2;
+  page-break-inside: avoid;
+}
+.pv-q-header { display: flex; align-items: center; gap: 1.5rem; margin-bottom: 1rem; }
+.pv-q-num { font-family: var(--font-d); font-size: 24px; font-weight: 800; color: var(--accent); }
+.pv-q-sec {
+  font-size: 11px; font-weight: 800; padding: 4px 10px; border-radius: 4px;
+  background: var(--bg3); color: var(--text3); text-transform: uppercase; letter-spacing: 0.1em;
+}
+
+.pv-q-passage {
+  background: var(--bg2); border-radius: var(--r-lg); padding: 1.5rem 2rem; margin-bottom: 2rem;
+  font-family: var(--font-d); font-size: 17px; line-height: 1.8; color: var(--text);
+  border-left: 6px solid var(--accent);
+}
+.pv-q-passage-label { 
+  font-family: var(--font-b); font-size: 11px; font-weight: 800; color: var(--accent); 
+  text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.5rem; 
+}
+
+.pv-q-text { font-family: var(--font-d); font-size: 21px; font-weight: 700; line-height: 1.5; color: var(--text); margin-bottom: 2rem; }
+
+.pv-options { display: flex; flex-direction: column; gap: 0.75rem; margin-top: 1rem; }
+.pv-opt { display: flex; align-items: center; gap: 1.25rem; font-size: 15px; font-weight: 600; padding: 0.5rem 0; color: var(--text2); }
+.pv-opt-letter {
+  width: 28px; height: 28px; border-radius: 6px; flex-shrink: 0;
+  background: var(--bg3); display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 800; color: var(--text3);
+}
+.pv-opt-txt { flex: 1; line-height: 1.4; }
+
+.pv-footer {
+  margin-top: 6rem; padding-top: 3rem; border-top: 2px dashed var(--bg4);
+  text-align: center; color: var(--text3);
+}
+.pv-footer-line { font-family: var(--font-d); font-size: 18px; font-weight: 700; margin-bottom: 8px; }
+.pv-footer-sub { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; }
+
+/* ── UTILS ── */
+.pv-loading { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; height: 100vh; }
+.pv-error { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1rem; height: 100vh; color: var(--red); font-weight: 700; }
+
+/* ── PRINT STYLES ── */
+@media print {
+  .pv-header { display: none; }
+  .pv-content { padding: 0; background: none; }
+  .pv-sheet { box-shadow: none; border: none; padding: 0; margin: 0; max-width: none; }
+  .pv-sheet::before { left: 1rem; }
+  .pv-sheet { width: 100%; }
+}
+
+/* ── Jump to Quiz button ── */
+.pv-jump-btn { font-size: 11px; margin-left: auto; }
+
+/* ── Answer Key Modal ── */
+.ak-modal { padding: 1rem; }
+.ak-tabs { display: flex; gap: 0; border-bottom: 2px solid var(--bg4); margin-bottom: 1rem; }
+.ak-tab { padding: 0.5rem 1rem; font-weight: 700; font-size: 13px; color: var(--text3); background: none; border: none; border-bottom: 2px solid transparent; cursor: pointer; }
+.ak-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.ak-grid { max-height: 50vh; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 0.5rem; padding: 0.5rem 0; }
+.ak-row { display: flex; align-items: center; gap: 0.5rem; padding: 4px 8px; border-radius: 8px; width: calc(50% - 0.25rem); }
+.ak-row.changed { background: rgba(245, 158, 11, 0.08); }
+.ak-qnum { font-size: 12px; font-weight: 800; color: var(--text3); width: 32px; flex-shrink: 0; }
+.ak-opts { display: flex; gap: 4px; }
+.ak-opt {
+  width: 28px; height: 28px; border-radius: 6px; font-size: 12px; font-weight: 800;
+  background: var(--bg3); color: var(--text3); border: 2px solid transparent;
+  cursor: pointer; transition: all 0.15s; display: flex; align-items: center; justify-content: center;
+}
+.ak-opt:hover { border-color: var(--accent); color: var(--accent); }
+.ak-opt.selected { background: var(--accent); color: #fff; border-color: var(--accent); }
+.ak-opt.was-ai { border-color: var(--amber); }
+.ak-change-badge { font-size: 10px; color: var(--amber); font-weight: 700; }
+
+.ak-bulk { display: flex; flex-direction: column; gap: 0.75rem; }
+.ak-textarea { width: 100%; padding: 0.75rem; border: 2px solid var(--bg4); border-radius: 8px; font-family: var(--font-b); font-size: 13px; resize: vertical; }
+.ak-textarea:focus { border-color: var(--accent); outline: none; }
+
+.ak-error { color: var(--red); font-size: 13px; font-weight: 700; margin-top: 0.5rem; }
+.ak-success { color: var(--green); font-size: 13px; font-weight: 700; margin-top: 0.5rem; }
+
+.ak-footer { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--bg4); }
+.ak-summary { flex: 1; font-size: 13px; color: var(--text3); font-weight: 600; }
+
+@media (max-width: 1000px) {
+  .pv-header { padding: 1rem 1.5rem; gap: 1rem; }
+  .pv-title { font-size: 18px; }
+  .pv-meta { font-size: 12px; }
+  .pv-sheet { padding: 3rem 2.5rem; border-radius: 0; }
+  .pv-sheet::before { left: 1.5rem; }
+  .pv-q-text { font-size: 18px; }
+}

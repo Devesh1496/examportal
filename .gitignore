@@ -1,6 +1,9 @@
 node_modules/
 backend/data/
 backend/.env
+backend/test_pages/
+backend/test*.js
+backend/test*.pdf
 .DS_Store
 build/
 *.log

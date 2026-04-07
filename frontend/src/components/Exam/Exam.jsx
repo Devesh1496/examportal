@@ -1,5 +1,5 @@
 // components/Exam/Exam.jsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useExam } from '../../hooks/useExam';
 import { ProgressBar, Spinner, Modal } from '../UI';
 import './Exam.css';
@@ -40,7 +40,7 @@ function OptionItem({ letter, textEn, textHi, lang, state, onClick, disabled }) 
 }
 
 // ── QuestionCard ──────────────────────────────────────────────
-function QuestionCard({ q, qIndex, answers, lang, reviewing, onSelect, section }) {
+function QuestionCard({ q, qIndex, answers, lang, reviewing, onSelect, section, showSource, isRevealed, onReveal }) {
   const chosen = answers[qIndex];
   const LETTERS = ['A', 'B', 'C', 'D', 'E', 'F'];
 
@@ -48,10 +48,12 @@ function QuestionCard({ q, qIndex, answers, lang, reviewing, onSelect, section }
   const optHi = q.options_hi || [];
 
   const getState = (i) => {
-    if (!reviewing) return chosen === i ? 'selected' : '';
-    if (i === q.answer) return 'correct';
-    if (chosen === i && chosen !== q.answer) return 'wrong';
-    return '';
+    if (reviewing || isRevealed) {
+      if (i === q.answer) return 'correct';
+      if (chosen === i && chosen !== q.answer) return 'wrong';
+      return '';
+    }
+    return chosen === i ? 'selected' : '';
   };
 
   return (
@@ -60,11 +62,14 @@ function QuestionCard({ q, qIndex, answers, lang, reviewing, onSelect, section }
       <div className="q-meta">
         <span className="q-num">Q{q.q_number || qIndex + 1}</span>
         <span className="q-sec-badge">{section}</span>
+        {showSource && q.paper_title && (
+          <span className="q-source-badge">📄 {q.paper_title}</span>
+        )}
         <span className="q-marks">+1.25 / −0.42</span>
       </div>
 
       {/* passage */}
-      {q.has_passage === 1 && (q.passage_en || q.passage_hi) && (
+      {q.has_passage && (q.passage_en || q.passage_hi) && (
         <div className="q-passage">
           <div className="q-passage-label">📖 Read the passage</div>
           {(lang === 'en' || lang === 'both') && q.passage_en && (
@@ -106,6 +111,24 @@ function QuestionCard({ q, qIndex, answers, lang, reviewing, onSelect, section }
         ))}
       </div>
 
+      {/* Show Answer button (only during active quiz, not reviewing) */}
+      {!reviewing && q.answer !== null && (
+        <div className="q-reveal-wrap">
+          {isRevealed ? (
+            <div className="q-revealed-note">
+              ✓ Answer: <strong>{LETTERS[q.answer]}. {optEn[q.answer]}</strong>
+              {optHi[q.answer] && optHi[q.answer] !== optEn[q.answer] && (
+                <span className="hi"> / {optHi[q.answer]}</span>
+              )}
+            </div>
+          ) : (
+            <button className="btn btn-ghost btn-sm q-reveal-btn" onClick={() => onReveal(qIndex)}>
+              👁 Show Answer
+            </button>
+          )}
+        </div>
+      )}
+
       {/* review note */}
       {reviewing && chosen !== undefined && chosen !== q.answer && q.answer !== null && (
         <div className="q-correct-note">
@@ -144,15 +167,17 @@ function ConfirmModal({ open, answered, total, onConfirm, onCancel }) {
 }
 
 // ── Exam (main) ───────────────────────────────────────────────
-export default function Exam({ paper, questions, onFinish, onBack }) {
+export default function Exam({ paper, questions, onFinish, onBack, onToggleView, noSave = false, showSource = false, subjectInfo = null, onNextQuiz = null, jumpToQ = null, onJumpHandled = null }) {
   const [lang, setLang] = useState('both');
   const [showConfirm, setShowConfirm] = useState(false);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [reviewing, setReviewing] = useState(false);
+  const [showResumeBanner, setShowResumeBanner] = useState(true);
 
-  const exam = useExam(paper, questions);
-  const { currentQ, answers, marked, timeLeft, submitted, result,
-          formatTime, selectAnswer, toggleMark, goTo, next, prev,
-          handleSubmit, progress, answeredCount } = exam;
+  const exam = useExam(paper, questions, { noSave });
+  const { currentQ, answers, marked, revealed, timeLeft, submitted, result, resumed,
+          formatTime, selectAnswer, toggleMark, revealAnswer, goTo, next, prev,
+          handleSubmit, progress, answeredCount, reset } = exam;
 
   const q = questions[currentQ];
   if (!q) return null;
@@ -162,19 +187,46 @@ export default function Exam({ paper, questions, onFinish, onBack }) {
     await handleSubmit();
   };
 
-  const timePct = timeLeft / (3 * 3600) * 100;
+  const doReattempt = () => {
+    setReviewing(false);
+    reset();
+  };
+
+  // Pause & Exit — state is auto-saved to localStorage by useExam
+  const handleExit = () => {
+    if (!submitted && answeredCount > 0) {
+      setShowExitConfirm(true);
+    } else {
+      onBack();
+    }
+  };
+
+  // Handle jump-to-question from PaperView
+  useEffect(() => {
+    if (jumpToQ !== null && jumpToQ >= 0 && jumpToQ < questions.length) {
+      goTo(jumpToQ);
+      onJumpHandled?.();
+    }
+  }, [jumpToQ]);
+
   const timerWarn = timeLeft < 600;
 
   return (
     <div className="exam">
       {/* ── TOP BAR ── */}
       <div className="exam-topbar">
-        <button className="btn btn-ghost exam-back" onClick={onBack}>← Exit</button>
+        <button className="btn btn-ghost exam-back" onClick={handleExit}>⏸ Pause & Exit</button>
         <div className="exam-title-wrap">
           <div className="exam-title">{paper.title}</div>
           <div className="exam-subtitle">Q{currentQ + 1} of {questions.length}</div>
         </div>
         <div className="exam-topbar-right">
+          {/* full view toggle */}
+          {onToggleView && (
+            <button className="btn btn-ghost" onClick={onToggleView} title="See all questions at once">
+              ⎙ Full View
+            </button>
+          )}
           {/* lang toggle */}
           <div className="lang-toggle">
             {LANG_OPTIONS.map(o => (
@@ -187,7 +239,6 @@ export default function Exam({ paper, questions, onFinish, onBack }) {
           </div>
           {/* timer */}
           <div className={`exam-timer${timerWarn ? ' warn' : ''}`}>
-            {timerWarn && <span className="timer-pulse"/>}
             {formatTime(timeLeft)}
           </div>
         </div>
@@ -233,6 +284,9 @@ export default function Exam({ paper, questions, onFinish, onBack }) {
             reviewing={reviewing}
             onSelect={selectAnswer}
             section={q.section || 'General'}
+            showSource={showSource}
+            isRevealed={!!revealed[currentQ]}
+            onReveal={revealAnswer}
           />
 
           {/* nav buttons */}
@@ -244,10 +298,10 @@ export default function Exam({ paper, questions, onFinish, onBack }) {
             >
               {marked[currentQ] ? '★ Marked' : '☆ Mark'}
             </button>
-            {currentQ < questions.length - 1
-              ? <button className="btn btn-primary" onClick={next} style={{marginLeft:'auto'}}>Next →</button>
-              : <button className="btn btn-success" onClick={() => setShowConfirm(true)} style={{marginLeft:'auto'}}>Submit ✓</button>
-            }
+            <button className="btn btn-success" onClick={() => setShowConfirm(true)} style={{marginLeft:'auto'}}>Submit ✓</button>
+            {currentQ < questions.length - 1 && (
+              <button className="btn btn-primary" onClick={next}>Next →</button>
+            )}
           </div>
         </div>
       </div>
@@ -260,6 +314,32 @@ export default function Exam({ paper, questions, onFinish, onBack }) {
         onCancel={() => setShowConfirm(false)}
       />
 
+      {/* Exit/Pause confirmation */}
+      <Modal open={showExitConfirm} onClose={() => setShowExitConfirm(false)} title="Pause Quiz?" width={400}>
+        <div className="confirm-modal">
+          <div className="confirm-stats">
+            <div><span className="c-green">{answeredCount}</span> Answered</div>
+            <div><span className="c-amber">{questions.length - answeredCount}</span> Remaining</div>
+          </div>
+          <p style={{fontSize:'14px', color:'var(--text2)', textAlign:'center', margin:'0.5rem 0'}}>
+            Your progress is saved. You can resume this quiz later.
+          </p>
+          <div className="confirm-actions">
+            <button className="btn btn-ghost" onClick={() => setShowExitConfirm(false)}>Continue Quiz</button>
+            <button className="btn btn-amber" onClick={() => { setShowExitConfirm(false); onBack(); }}>⏸ Pause & Exit</button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Resumed banner */}
+      {resumed && !submitted && showResumeBanner && (
+        <div className="exam-resumed-banner">
+          ▶ Resumed — your previous progress has been restored
+          <button className="btn btn-ghost btn-sm" onClick={() => { reset(); setShowResumeBanner(false); }}>Start Fresh</button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setShowResumeBanner(false)}>✕</button>
+        </div>
+      )}
+
       {/* Results overlay when submitted */}
       {submitted && result && (
         <ResultsOverlay
@@ -269,8 +349,11 @@ export default function Exam({ paper, questions, onFinish, onBack }) {
           answers={answers}
           onReview={() => setReviewing(true)}
           onBack={onBack}
+          onReattempt={doReattempt}
           lang={lang}
           reviewing={reviewing}
+          subjectInfo={subjectInfo}
+          onNextQuiz={onNextQuiz}
         />
       )}
     </div>
@@ -278,9 +361,10 @@ export default function Exam({ paper, questions, onFinish, onBack }) {
 }
 
 // ── Results Overlay ───────────────────────────────────────────
-function ResultsOverlay({ result, paper, questions, answers, onReview, onBack, lang, reviewing }) {
-  const [tab, setTab] = useState('score'); // 'score' | 'review'
-  const pct = Math.round(result.correct / questions.filter(q => q.answer !== null).length * 100) || 0;
+function ResultsOverlay({ result, paper, questions, answers, onReview, onBack, onReattempt, lang, reviewing, subjectInfo, onNextQuiz }) {
+  const [tab, setTab] = useState('score'); // 'score' | 'analysis' | 'review'
+  const totalWithAnswer = questions.filter(q => q.answer !== null).length;
+  const pct = totalWithAnswer > 0 ? Math.round(result.correct / totalWithAnswer * 100) : 0;
   const grade = pct >= 90 ? { label: 'Outstanding! 🏆', color: '#f59e0b' }
     : pct >= 75 ? { label: 'Excellent! 🌟', color: 'var(--green)' }
     : pct >= 60 ? { label: 'Good Work! 👏', color: 'var(--accent-lt)' }
@@ -294,6 +378,7 @@ function ResultsOverlay({ result, paper, questions, answers, onReview, onBack, l
       <div className="results-panel fade-up">
         <div className="results-tabs">
           <button className={`rtab${tab==='score'?' active':''}`} onClick={() => setTab('score')}>Score</button>
+          <button className={`rtab${tab==='analysis'?' active':''}`} onClick={() => setTab('analysis')}>Analysis</button>
           <button className={`rtab${tab==='review'?' active':''}`} onClick={() => setTab('review')}>Review Answers</button>
         </div>
 
@@ -302,18 +387,21 @@ function ResultsOverlay({ result, paper, questions, answers, onReview, onBack, l
             {/* Score ring */}
             <div className="results-hero">
               <svg className="score-ring" viewBox="0 0 120 120">
-                <circle cx="60" cy="60" r="50" fill="none" stroke="var(--bg3)" strokeWidth="10"/>
+                <circle cx="60" cy="60" r="50" fill="none" stroke="var(--bg3)" strokeWidth="8"/>
                 <circle cx="60" cy="60" r="50" fill="none" stroke={grade.color}
-                  strokeWidth="10" strokeLinecap="round"
+                  strokeWidth="8" strokeLinecap="round"
                   strokeDasharray={`${pct * 3.14} 314`}
-                  transform="rotate(-90 60 60)" style={{transition:'stroke-dasharray 1s ease'}}/>
-                <text x="60" y="55" textAnchor="middle" fill="white" fontSize="22" fontWeight="700" fontFamily="Syne">{result.score.toFixed(1)}</text>
-                <text x="60" y="72" textAnchor="middle" fill="var(--text3)" fontSize="10">/ {result.maxScore}</text>
+                  transform="rotate(-90 60 60)" style={{transition:'stroke-dasharray 1.2s cubic-bezier(0.16, 1, 0.3, 1)'}}/>
+                <text x="60" y="58" textAnchor="middle" fill="var(--text)" fontSize="28" fontWeight="800" fontFamily="var(--font-d)">{result.score.toFixed(1)}</text>
+                <text x="60" y="75" textAnchor="middle" fill="var(--text3)" fontSize="10" fontWeight="600" letterSpacing="0.05em">/ {result.maxScore}</text>
               </svg>
               <div>
                 <div className="results-grade" style={{color: grade.color}}>{grade.label}</div>
                 <div className="results-pct">{pct}% accuracy</div>
                 <div className="results-time">⏱ {Math.floor((result.timeTaken||0)/60)}m {(result.timeTaken||0)%60}s</div>
+                {result.revealedCount > 0 && (
+                  <div className="results-revealed">👁 {result.revealedCount} answer{result.revealedCount > 1 ? 's' : ''} revealed</div>
+                )}
               </div>
             </div>
 
@@ -325,30 +413,44 @@ function ResultsOverlay({ result, paper, questions, answers, onReview, onBack, l
               <div className="rs-card accent"><div className="rs-num">{result.score.toFixed(1)}</div><div className="rs-lbl">Score</div></div>
             </div>
 
-            {/* Section breakdown */}
-            {secEntries.length > 0 && (
-              <div className="results-sections">
-                <div className="rs-sec-title">Section Performance</div>
-                {secEntries.map(([sec, data]) => {
-                  const p = data.total > 0 ? Math.round(data.correct / data.total * 100) : 0;
-                  return (
-                    <div key={sec} className="rs-sec-row">
-                      <div className="rs-sec-name">{sec}</div>
-                      <div className="rs-sec-bar">
-                        <div className="rs-sec-fill" style={{width:`${p}%`, background: p>=60?'var(--green)':'var(--amber)'}}/>
-                      </div>
-                      <div className="rs-sec-pct">{p}%</div>
-                    </div>
-                  );
-                })}
+            {/* Subject quiz: prev/next navigation */}
+            {subjectInfo && onNextQuiz && (
+              <div className="results-subject-nav">
+                <button
+                  className="btn btn-ghost rsn-btn"
+                  disabled={subjectInfo.quizNum <= 1}
+                  onClick={() => onNextQuiz(subjectInfo.subject, subjectInfo.quizNum - 1)}
+                >
+                  ← Quiz #{subjectInfo.quizNum - 1}
+                </button>
+                <button
+                  className="btn btn-ghost rsn-btn rsn-retry"
+                  onClick={onReattempt}
+                >
+                  🔁 Retry
+                </button>
+                <button
+                  className="btn btn-primary rsn-btn"
+                  disabled={subjectInfo.quizNum >= subjectInfo.totalQuizzes}
+                  onClick={() => onNextQuiz(subjectInfo.subject, subjectInfo.quizNum + 1)}
+                >
+                  Quiz #{subjectInfo.quizNum + 1} →
+                </button>
               </div>
             )}
 
             <div className="results-actions">
-              <button className="btn btn-ghost" onClick={onBack}>← Back to Papers</button>
+              <button className="btn btn-ghost" onClick={onBack}>
+                {subjectInfo ? '← All Subjects' : '← Back to Papers'}
+              </button>
+              <button className="btn btn-ghost" onClick={onReattempt}>🔁 Reattempt</button>
               <button className="btn btn-primary" onClick={() => setTab('review')}>Review Answers →</button>
             </div>
           </>
+        )}
+
+        {tab === 'analysis' && (
+          <AnalysisTab result={result} questions={questions} answers={answers} secEntries={secEntries} />
         )}
 
         {tab === 'review' && (
@@ -390,11 +492,104 @@ function ResultsOverlay({ result, paper, questions, answers, onReview, onBack, l
               );
             })}
             <div style={{padding:'1rem',textAlign:'center'}}>
-              <button className="btn btn-ghost" onClick={onBack}>← Back to Papers</button>
+              <button className="btn btn-ghost" onClick={onBack}>
+                {subjectInfo ? '← All Subjects' : '← Back to Papers'}
+              </button>
             </div>
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ── Analysis Tab ──────────────────────────────────────────────
+function AnalysisTab({ result, questions, answers, secEntries }) {
+  // Find strong and weak sections
+  const sectionAnalysis = secEntries.map(([sec, data]) => {
+    const pct = data.total > 0 ? Math.round(data.correct / data.total * 100) : 0;
+    return { sec, ...data, pct };
+  }).sort((a, b) => b.pct - a.pct);
+
+  const strong = sectionAnalysis.filter(s => s.pct >= 60);
+  const weak = sectionAnalysis.filter(s => s.pct < 50);
+
+  const avgTimePerQ = result.timeTaken > 0 && questions.length > 0
+    ? Math.round(result.timeTaken / questions.length)
+    : 0;
+
+  return (
+    <div className="analysis-tab">
+      {/* Overview cards */}
+      <div className="analysis-overview">
+        <div className="ao-card">
+          <div className="ao-label">Time Taken</div>
+          <div className="ao-value">{Math.floor((result.timeTaken||0)/60)}m {(result.timeTaken||0)%60}s</div>
+        </div>
+        <div className="ao-card">
+          <div className="ao-label">Avg per Question</div>
+          <div className="ao-value">{avgTimePerQ}s</div>
+        </div>
+        <div className="ao-card">
+          <div className="ao-label">Accuracy</div>
+          <div className="ao-value">{questions.filter(q=>q.answer!==null).length > 0 ? Math.round(result.correct / questions.filter(q=>q.answer!==null).length * 100) : 0}%</div>
+        </div>
+        <div className="ao-card">
+          <div className="ao-label">Attempt Rate</div>
+          <div className="ao-value">{Math.round(((result.correct + result.wrong) / questions.length) * 100)}%</div>
+        </div>
+      </div>
+
+      {/* Section Performance */}
+      {secEntries.length > 0 && (
+        <div className="results-sections">
+          <div className="rs-sec-title">Section Performance</div>
+          {sectionAnalysis.map(({ sec, correct, total, pct }) => (
+            <div key={sec} className="rs-sec-row">
+              <div className="rs-sec-name">{sec}</div>
+              <div className="rs-sec-bar">
+                <div className="rs-sec-fill" style={{
+                  width: `${pct}%`,
+                  background: pct >= 60 ? 'var(--green)' : pct >= 40 ? 'var(--amber)' : 'var(--red)'
+                }}/>
+              </div>
+              <div className="rs-sec-pct">{correct}/{total} ({pct}%)</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Strong areas */}
+      {strong.length > 0 && (
+        <div className="analysis-section">
+          <div className="analysis-section-title good">💪 Strong Areas</div>
+          <div className="analysis-tags">
+            {strong.map(s => (
+              <span key={s.sec} className="analysis-tag good">{s.sec} ({s.pct}%)</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Weak areas */}
+      {weak.length > 0 && (
+        <div className="analysis-section">
+          <div className="analysis-section-title weak">📖 Needs Improvement</div>
+          <div className="analysis-tags">
+            {weak.map(s => (
+              <span key={s.sec} className="analysis-tag weak">{s.sec} ({s.pct}%)</span>
+            ))}
+          </div>
+          <div className="analysis-tip">Focus on these subjects in your next practice session.</div>
+        </div>
+      )}
+
+      {/* Revealed answers note */}
+      {result.revealedCount > 0 && (
+        <div className="analysis-note">
+          👁 You revealed {result.revealedCount} answer{result.revealedCount > 1 ? 's' : ''} during this quiz. Try solving without hints next time!
+        </div>
+      )}
     </div>
   );
 }

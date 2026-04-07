@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.24.0",
+    "@supabase/supabase-js": "^2.101.1",
     "axios": "^1.6.0",
     "cheerio": "^1.0.0-rc.12",
     "cors": "^2.8.5",
@@ -22,7 +23,7 @@
     "node-cron": "^3.0.3",
     "pdf-lib": "^1.17.1",
     "pdf-parse": "^1.1.1",
-    "playwright": "^1.40.0",
+    "playwright": "1.58.2",
     "sharp": "^0.33.5",
     "sqlite3": "^5.1.6",
     "uuid": "^9.0.0"

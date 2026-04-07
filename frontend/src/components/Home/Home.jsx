@@ -1,39 +1,91 @@
 // components/Home/Home.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../../utils/api';
-import { processPaperClientSide } from '../../utils/pdfProcessor';
+import { supabase } from '../../supabaseClient';
+import { processPaperClientSide, processPaperFromFile } from '../../utils/pdfProcessor';
 import { Spinner, StatusBadge, EmptyState, StatCard, Input, Modal } from '../UI';
 import { usePaperStatus } from '../../hooks/usePolling';
 import './Home.css';
 
 // ── AddPaperModal ─────────────────────────────────────────────
 function AddPaperModal({ open, onClose, onAdded }) {
+  const [mode, setMode] = useState('url');       // 'url' | 'file'
   const [url, setUrl] = useState('');
+  const [file, setFile] = useState(null);
   const [title, setTitle] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
   const [done, setDone] = useState(false);
 
+  const resetState = () => {
+    setUrl(''); setFile(null); setTitle('');
+    setError(''); setStatus(''); setDone(false);
+  };
+
+  const switchMode = (m) => { if (!loading) { setMode(m); resetState(); } };
+
+  const handleFileChange = (e) => {
+    const f = e.target.files?.[0];
+    if (f) {
+      if (f.type !== 'application/pdf' && !f.name.toLowerCase().endsWith('.pdf')) {
+        setError('Please select a PDF file');
+        return;
+      }
+      if (f.size > 50 * 1024 * 1024) {
+        setError('File too large (max 50 MB)');
+        return;
+      }
+      setFile(f);
+      setError('');
+      // Auto-fill title from filename if empty
+      if (!title.trim()) {
+        setTitle(f.name.replace(/\.pdf$/i, '').replace(/[-_]/g, ' '));
+      }
+    }
+  };
+
+  // Extraction progress state
+  const [progress, setProgress] = useState(null); // { chunk, totalChunks, questionsExtracted, totalQuestions }
+
+  const handleStatus = useCallback((msg) => {
+    setStatus(msg);
+    // If msg looks like the progress template, parse it
+    const m = msg.match(/Extracting chunk (\d+)\/(\d+) — (\d+)\/(\d+) questions done/);
+    if (m) {
+      setProgress({ chunk: +m[1], totalChunks: +m[2], questionsExtracted: +m[3], totalQuestions: +m[4] });
+    } else {
+      // If extraction finished or started, reset progress when done
+      if (msg.includes('Extracted') && msg.includes('questions') && msg.includes('!')) {
+        setProgress(null);
+      }
+    }
+  }, []);
+
   const handleAdd = async () => {
-    if (!url.trim()) return setError('Please enter a PDF URL');
+    if (mode === 'url' && !url.trim()) return setError('Please enter a PDF URL');
+    if (mode === 'file' && !file) return setError('Please select a PDF file');
 
-
-
-    setLoading(true); setError(''); setStatus('Starting…'); setDone(false);
+    setLoading(true); setError(''); setStatus('Starting…'); setDone(false); setProgress(null);
     try {
-      const paperTitle = title.trim() || extractTitleFromUrl(url.trim());
+      let paperTitle;
+      let extracted;
 
-      // Client-side processing via AI
-      const extracted = await processPaperClientSide(url.trim(), paperTitle, setStatus);
+      if (mode === 'url') {
+        paperTitle = title.trim() || extractTitleFromUrl(url.trim());
+        extracted = await processPaperClientSide(url.trim(), paperTitle, handleStatus);
+      } else {
+        paperTitle = title.trim() || file.name.replace(/\.pdf$/i, '').replace(/[-_]/g, ' ');
+        extracted = await processPaperFromFile(file, paperTitle, handleStatus);
+      }
 
       // Save to backend
       setStatus('Saving to database…');
       await api.savePaper(
         {
           title: extracted.paper_info?.title || paperTitle,
-          source_url: url.trim(),
-          pdf_url: url.trim(),
+          source_url: mode === 'url' ? url.trim() : `upload://${file.name}`,
+          pdf_url: mode === 'url' ? url.trim() : `upload://${file.name}`,
           website: 'manual',
           metadata: {
             max_marks: extracted.paper_info?.max_marks,
@@ -41,11 +93,13 @@ function AddPaperModal({ open, onClose, onAdded }) {
             negative_marking: extracted.paper_info?.negative_marking,
           },
         },
-        extracted.questions
+        extracted.questions,
+        extracted.passages || []
       );
 
       setDone(true);
-      setStatus(`✅ Done! ${extracted.questions.length} questions extracted.`);
+      setProgress(null);
+      setStatus(`Done! ${extracted.questions.length} questions extracted.`);
       onAdded();
     } catch (e) {
       console.error('Processing error:', e);
@@ -56,36 +110,108 @@ function AddPaperModal({ open, onClose, onAdded }) {
     }
   };
 
+  const hasInput = mode === 'url' ? !!url.trim() : !!file;
+
   return (
-    <Modal open={open} onClose={onClose} title="Add Question Paper" width={520}>
+    <Modal open={open} onClose={onClose} title="Add Question Paper" width={560}>
       <div className="add-modal">
-        <div className="add-modal-hint">
-          Paste a <strong>PDF URL</strong>. 
-          Questions will be extracted using AI directly in your browser — no API key needed.
+        {/* Mode toggle */}
+        <div className="add-modal-tabs">
+          <button
+            className={`add-tab ${mode === 'url' ? 'active' : ''}`}
+            onClick={() => switchMode('url')}
+            disabled={loading}
+          >
+            Link / URL
+          </button>
+          <button
+            className={`add-tab ${mode === 'file' ? 'active' : ''}`}
+            onClick={() => switchMode('file')}
+            disabled={loading}
+          >
+            Upload PDF
+          </button>
         </div>
-        <Input
-          label="URL"
-          value={url}
-          onChange={setUrl}
-          placeholder="https://rssb.rajasthan.gov.in/storage/questionpaper/..."
-        />
+
+        {mode === 'url' ? (
+          <>
+            <div className="add-modal-hint">
+              Paste a <strong>PDF URL</strong> from any exam website.
+              Questions will be extracted using AI.
+            </div>
+            <Input
+              label="PDF URL"
+              value={url}
+              onChange={setUrl}
+              placeholder="https://rssb.rajasthan.gov.in/storage/questionpaper/..."
+            />
+          </>
+        ) : (
+          <>
+            <div className="add-modal-hint">
+              Upload a <strong>PDF file</strong> from your device.
+              Max 50 MB. Questions will be extracted using AI.
+            </div>
+            <div className="add-file-area">
+              <input
+                type="file"
+                accept=".pdf,application/pdf"
+                onChange={handleFileChange}
+                id="pdf-upload"
+                className="add-file-input"
+                disabled={loading}
+              />
+              <label htmlFor="pdf-upload" className="add-file-label">
+                {file ? (
+                  <div className="add-file-selected">
+                    <span className="add-file-icon">PDF</span>
+                    <div>
+                      <div className="add-file-name">{file.name}</div>
+                      <div className="add-file-size">{(file.size / 1024 / 1024).toFixed(1)} MB</div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="add-file-empty">
+                    <span className="add-file-upload-icon">+</span>
+                    <span>Click to select PDF or drag & drop</span>
+                  </div>
+                )}
+              </label>
+            </div>
+          </>
+        )}
+
         <Input
           label="Title (optional)"
           value={title}
           onChange={setTitle}
           placeholder="e.g. RSSB Junior Engineer 2024"
         />
-        {error && <div className="add-modal-error">⚠ {error}</div>}
+
+        {error && <div className="add-modal-error">{error}</div>}
+        {progress && (
+          <div className="add-modal-progress-bar-wrap">
+            <div className="add-modal-progress-bar">
+              <div
+                className="add-modal-progress-fill"
+                style={{ width: `${(progress.questionsExtracted / progress.totalQuestions) * 100}%` }}
+              />
+            </div>
+            <div className="add-modal-progress-text">
+              {progress.questionsExtracted} / {progress.totalQuestions} questions extracted — Chunk {progress.chunk} / {progress.totalChunks}
+            </div>
+          </div>
+        )}
         {status && !error && (
           <div className="add-modal-status" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {loading && <Spinner size={14} />}
+            {loading && !progress && <Spinner size={14} />}
             {status}
           </div>
         )}
         <div className="add-modal-actions">
           <button className="btn btn-ghost" onClick={onClose} disabled={loading}>Cancel</button>
-          <button className="btn btn-primary" onClick={done ? onClose : handleAdd} disabled={loading || !url}>
-            {loading ? <>Processing…</> : done ? '✅ Done' : '🚀 Extract Questions'}
+          <button className="btn btn-primary" onClick={done ? onClose : handleAdd} disabled={loading || !hasInput}>
+            {loading ? 'Processing…' : done ? 'Done' : 'Extract Questions'}
           </button>
         </div>
       </div>
@@ -104,8 +230,8 @@ function extractTitleFromUrl(url) {
 }
 
 // ── PaperCard ─────────────────────────────────────────────────
-function PaperCard({ paper, onStartQuiz, onDelete }) {
-  const meta = paper.metadata ? JSON.parse(paper.metadata) : {};
+function PaperCard({ paper, onStartQuiz, onViewPaper, onDelete, isAdmin }) {
+  const meta = (typeof paper.metadata === 'string' ? JSON.parse(paper.metadata) : paper.metadata) || {};
   // Poll if processing
   const { status, totalQ } = usePaperStatus(
     paper.status === 'processing' ? paper.id : null,
@@ -125,8 +251,6 @@ function PaperCard({ paper, onStartQuiz, onDelete }) {
             <span>·</span>
             <span>{new Date(paper.date_found).toLocaleDateString('en-IN')}</span>
             {liveTotal > 0 && <><span>·</span><span>{liveTotal} Questions</span></>}
-            {meta.max_marks && <><span>·</span><span>{meta.max_marks} Marks</span></>}
-            {meta.duration && <><span>·</span><span>{meta.duration}</span></>}
           </div>
         </div>
         <StatusBadge status={liveStatus} />
@@ -147,22 +271,51 @@ function PaperCard({ paper, onStartQuiz, onDelete }) {
           disabled={liveStatus !== 'ready'}
           onClick={() => onStartQuiz(paper)}
         >
-          {liveStatus === 'ready' ? '▶ Start Quiz' : liveStatus === 'processing' ? 'Processing…' : 'Unavailable'}
+          ▶ Start Quiz
         </button>
-        <button className="btn btn-ghost" onClick={() => onDelete(paper.id)}>🗑 Delete</button>
+        <button
+          className="btn btn-ghost"
+          disabled={liveStatus !== 'ready'}
+          onClick={() => onViewPaper(paper)}
+        >
+          ⎙ View Paper
+        </button>
+        {isAdmin && (
+          <button className="btn btn-ghost" onClick={() => onDelete(paper.id)} title="Delete">🗑</button>
+        )}
       </div>
     </div>
   );
 }
 
+// ── Extract base exam name from title ────────────────────────
+function extractExamName(title = '') {
+  return title
+    .replace(/\b(19|20)\d{2}\b/g, '')           // remove years
+    .replace(/\b(RSSB|RPSC|RSSC|UPSC|SSC|RAS|IAS|NTA)\b/gi, '') // remove org prefixes
+    .replace(/[-–_|]/g, ' ')                     // remove separators
+    .replace(/\b(v\d+|fixed|new|old|set [a-z])\b/gi, '') // remove version tags
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, c => c.toUpperCase());     // Title Case
+}
+
 // ── Home ──────────────────────────────────────────────────────
-export default function Home({ onStartQuiz }) {
+export default function Home({ onStartQuiz, onViewPaper, isAdmin, embedded = false }) {
   const [papers, setPapers] = useState([]);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [search, setSearch] = useState('');
   const [scraping, setScraping] = useState(false);
+  const [activeChip, setActiveChip] = useState('All');
+
+  // Listen for external "open-add-paper" event (triggered from app topbar)
+  useEffect(() => {
+    const handler = () => setShowAdd(true);
+    window.addEventListener('open-add-paper', handler);
+    return () => window.removeEventListener('open-add-paper', handler);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -199,7 +352,12 @@ export default function Home({ onStartQuiz }) {
     }
   };
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+  };
+
   const handleDelete = async (id) => {
+    if (!isAdmin) return;
     if (!window.confirm('Delete this paper and all its questions?')) return;
     await api.deletePaper(id);
     setPapers(prev => prev.filter(p => p.id !== id));
@@ -210,25 +368,34 @@ export default function Home({ onStartQuiz }) {
   );
 
   return (
-    <div className="home fade-in">
-      {/* ── Header ── */}
-      <div className="home-header">
-        <div className="home-logo">
-          <span className="home-logo-icon">⚡</span>
-          <div>
-            <div className="home-logo-title">ExamPortal</div>
-            <div className="home-logo-sub">AI-Powered Quiz Generator</div>
+    <div className={`home fade-in${embedded ? ' home-embedded' : ''}`}>
+      {/* ── Header (only shown when NOT embedded in App tabs) ── */}
+      {!embedded && (
+        <div className="home-header">
+          <div className="home-logo">
+            <div className="home-logo-icon">K</div>
+            <div>
+              <div className="home-logo-title">Kinetic Academy</div>
+              <div className="home-logo-sub">Premium AI Exam Portal</div>
+            </div>
+          </div>
+          <div className="home-header-actions">
+            {isAdmin && (
+              <>
+                <button className="btn btn-ghost" onClick={handleScrapeAll} disabled={scraping}>
+                  {scraping ? <><Spinner size={13}/> Scanning…</> : '🔄 Scan Websites'}
+                </button>
+                <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
+                  + Add Paper
+                </button>
+              </>
+            )}
+            <button className="btn btn-ghost-danger" onClick={handleLogout} title="Logout">
+              Logout
+            </button>
           </div>
         </div>
-        <div className="home-header-actions">
-          <button className="btn btn-ghost" onClick={handleScrapeAll} disabled={scraping}>
-            {scraping ? <><Spinner size={13}/> Scanning…</> : '🔄 Scan Websites'}
-          </button>
-          <button className="btn btn-primary" onClick={() => setShowAdd(true)}>
-            + Add Paper
-          </button>
-        </div>
-      </div>
+      )}
 
       {/* ── Stats ── */}
       {stats && (
@@ -238,6 +405,7 @@ export default function Home({ onStartQuiz }) {
           <StatCard label="Processing" value={stats.processingPapers} accent="var(--amber)" />
           <StatCard label="Questions" value={(stats.totalQuestions || 0).toLocaleString()} accent="var(--accent-lt)" />
           <StatCard label="Attempts" value={stats.totalAttempts} />
+          {stats.totalCandidates > 0 && <StatCard label="Candidates" value={stats.totalCandidates} accent="var(--accent-lt)" />}
         </div>
       )}
 
@@ -267,7 +435,9 @@ export default function Home({ onStartQuiz }) {
               key={p.id}
               paper={p}
               onStartQuiz={onStartQuiz}
+              onViewPaper={onViewPaper}
               onDelete={handleDelete}
+              isAdmin={isAdmin}
             />
           ))}
         </div>
@@ -281,3 +451,4 @@ export default function Home({ onStartQuiz }) {
     </div>
   );
 }
+

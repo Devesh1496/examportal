@@ -1,17 +1,29 @@
-// utils/pdfProcessor.js — Client-side PDF rendering + native Backend AI image extraction
+// utils/pdfProcessor.js — Client-side PDF rendering + Backend AI extraction (async polling)
 import * as pdfjsLib from 'pdfjs-dist';
+import { supabase } from '../supabaseClient';
 
-// Use the CDN worker to avoid bundler issues
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.4.168/pdf.worker.min.mjs';
 
-// ─── FETCH PDF VIA BACKEND PROXY ─────────────────────────────
+const BASE = process.env.REACT_APP_BACKEND_URL || '/api';
+
+async function getAuthHeaders() {
+  const { data: { session } } = await supabase.auth.getSession();
+  const headers = { 'Content-Type': 'application/json' };
+  if (session?.access_token) {
+    headers['Authorization'] = `Bearer ${session.access_token}`;
+  }
+  return headers;
+}
+
+// ─── FETCH PDF VIA BACKEND PROXY (for URL input) ────────────
 export async function fetchPdfAsArrayBuffer(pdfUrl, onStatus) {
   onStatus?.('Downloading PDF…');
-  const res = await fetch(`/api/proxy/pdf?url=${encodeURIComponent(pdfUrl)}`);
+  const headers = await getAuthHeaders();
+  const res = await fetch(`${BASE}/proxy/pdf?url=${encodeURIComponent(pdfUrl)}`, { headers });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `Failed to download: ${res.status}`);
+    throw new Error(data.error || `Failed to download PDF: ${res.status}`);
   }
   return await res.arrayBuffer();
 }
@@ -37,7 +49,7 @@ export async function renderPdfToImages(arrayBuffer, onStatus) {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     await page.render({ canvasContext: ctx, viewport }).promise;
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
     base64Images.push(dataUrl);
 
     canvas.width = 0;
@@ -46,27 +58,109 @@ export async function renderPdfToImages(arrayBuffer, onStatus) {
   return base64Images;
 }
 
-// ─── MAIN ORCHESTRATOR ───────────────────────────────────────
-export async function processPaperClientSide(pdfUrl, paperTitle, onStatus) {
-  onStatus?.('Starting Native Backend Image Extraction…');
-  
-  // 1. Download proxy
-  const arrayBuffer = await fetchPdfAsArrayBuffer(pdfUrl, onStatus);
-  
-  // 2. Client-side PDF string conversion
-  const images = await renderPdfToImages(arrayBuffer, onStatus);
-  onStatus?.(`Sending ${images.length} images to local AI processing…`);
+// ─── POLL JOB UNTIL COMPLETE ────────────────────────────────
+async function pollJob(jobId, onStatus) {
+  const headers = await getAuthHeaders();
+  let elapsed = 0;
+  const POLL_INTERVAL = 5000; // 5 seconds
+  const MAX_WAIT = 15 * 60 * 1000; // 15 minutes
 
-  // 3. Backend AI processing securely
-  const res = await fetch('/api/papers/process-images', {
+  while (elapsed < MAX_WAIT) {
+    await new Promise(r => setTimeout(r, POLL_INTERVAL));
+    elapsed += POLL_INTERVAL;
+
+    const mins = Math.floor(elapsed / 60000);
+    const secs = Math.floor((elapsed % 60000) / 1000);
+    try {
+      const res = await fetch(`${BASE}/jobs/${jobId}`, { headers });
+      const data = await res.json();
+
+      if (data.status === 'done') {
+        return data;
+      }
+      if (data.status === 'failed') {
+        throw new Error(data.error || 'Extraction failed on server');
+      }
+      // Show progress if available
+      if (data.progress) {
+        const { chunk, totalChunks, questionsExtracted, totalQuestions } = data.progress;
+        onStatus?.(`Extracting chunk ${chunk}/${totalChunks} — ${questionsExtracted}/${totalQuestions} questions done`);
+      } else {
+        onStatus?.(`AI extracting questions… ${mins}m ${secs}s elapsed`);
+      }
+      // still processing — continue polling
+    } catch (err) {
+      // Network blip — keep polling unless it's a real error
+      if (err.message && !err.message.includes('fetch')) throw err;
+    }
+  }
+  throw new Error('Extraction timed out after 15 minutes. Please try again.');
+}
+
+// ─── SEND IMAGES TO BACKEND → ASYNC JOB → POLL ─────────────
+async function extractViaBackend(images, paperTitle, onStatus) {
+  onStatus?.(`Uploading ${images.length} pages to server…`);
+  const headers = await getAuthHeaders();
+
+  const res = await fetch(`${BASE}/papers/process-images`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ images, title: paperTitle })
+    headers,
+    body: JSON.stringify({ images, title: paperTitle }),
   });
-  
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Failed to extract questions');
 
-  onStatus?.(`Extracted ${data.questions.length} questions successfully!`);
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to start extraction');
+
+  // If backend returned a jobId, poll for completion
+  if (data.jobId) {
+    onStatus?.('AI extraction started, processing questions…');
+    const result = await pollJob(data.jobId, onStatus);
+    onStatus?.(`Extracted ${result.questions.length} questions!`);
+    return result;
+  }
+
+  // Legacy: backend returned result directly
+  onStatus?.(`Extracted ${data.questions.length} questions!`);
+  return data;
+}
+
+// ─── PROCESS FROM URL ───────────────────────────────────────
+export async function processPaperClientSide(pdfUrl, paperTitle, onStatus) {
+  onStatus?.('Starting extraction…');
+  const arrayBuffer = await fetchPdfAsArrayBuffer(pdfUrl, onStatus);
+  const images = await renderPdfToImages(arrayBuffer, onStatus);
+  return await extractViaBackend(images, paperTitle, onStatus);
+}
+
+// ─── PROCESS FROM FILE — upload binary PDF, server renders + extracts ─
+export async function processPaperFromFile(file, paperTitle, onStatus) {
+  onStatus?.('Uploading PDF to server…');
+  const headers = await getAuthHeaders();
+  // Don't set Content-Type — browser sets it with boundary for FormData
+
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('title', paperTitle || '');
+  formData.append('paper', paperTitle || file.name.replace(/\.pdf$/i, ''));
+
+  const res = await fetch(`${BASE}/papers/upload`, {
+    method: 'POST',
+    // No Content-Type header — let browser set multipart boundary
+    headers: { Authorization: headers.Authorization },
+    body: formData,
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+  // Poll for extraction results
+  if (data.jobId) {
+    onStatus?.('Server rendering pages and extracting questions…');
+    const result = await pollJob(data.jobId, onStatus);
+    onStatus?.(`Extracted ${result.questions.length} questions!`);
+    return result;
+  }
+
+  onStatus?.(`Extracted ${data.questions.length} questions!`);
   return data;
 }
