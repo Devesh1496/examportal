@@ -350,13 +350,14 @@ function buildExtractionPrompt(paperTitle, optCount, startQ, endQ, sections) {
 This exam paper is titled: "${paperTitle}"
 
 YOUR TASK: Extract ONLY questions numbered ${startQ} to ${endQ} from the provided pages.
-${sectionHint}
+${startQ === 1 ? `\nIMPORTANT: The very first 1-2 pages contain instructions, rules, title, cover page, etc. — they have NO questions. SKIP all instruction/cover pages entirely. Look at ALL pages carefully and find where question number ${startQ} actually starts on the first real content page. Begin extracting from that question onward.\n` : ''}${sectionHint}
 STRICT RULES — VIOLATIONS ARE NOT ACCEPTABLE:
 1. COPY TEXT EXACTLY AS PRINTED. Do not rephrase, summarize, translate, or improve anything.
 2. DO NOT HALLUCINATE. Only extract questions that are physically visible in the provided images.
 3. DO NOT generate or invent any question. If a question number is not visible, skip it entirely.
 4. Extract ONLY questions in the range ${startQ} to ${endQ}. Ignore all others.
 5. SKIP instruction pages, cover pages, and any non-question content. Only extract actual numbered exam questions.
+
 6. For bilingual papers (Hindi + English), extract both languages exactly as printed.
 7. If only Hindi is printed, set "en" to null. If only English, set "hi" to null.
 8. answer is 0-indexed (0=A, 1=B, 2=C, 3=D, 4=E). If the paper has an answer key printed, use it. Otherwise, try to determine the correct answer using your knowledge. If you are NOT confident in the answer, set answer to null — it is better to leave it null than to guess incorrectly.
