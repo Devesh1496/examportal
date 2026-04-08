@@ -60,7 +60,6 @@ export async function renderPdfToImages(arrayBuffer, onStatus) {
 
 // ─── POLL JOB UNTIL COMPLETE ────────────────────────────────
 async function pollJob(jobId, onStatus) {
-  const headers = await getAuthHeaders();
   let elapsed = 0;
   const POLL_INTERVAL = 5000; // 5 seconds
   const MAX_WAIT = 15 * 60 * 1000; // 15 minutes
@@ -72,6 +71,8 @@ async function pollJob(jobId, onStatus) {
     const mins = Math.floor(elapsed / 60000);
     const secs = Math.floor((elapsed % 60000) / 1000);
     try {
+      // Refresh auth headers each poll to avoid token expiry during long extractions
+      const headers = await getAuthHeaders();
       const res = await fetch(`${BASE}/jobs/${jobId}`, { headers });
       const data = await res.json();
 

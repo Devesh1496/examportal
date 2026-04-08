@@ -85,7 +85,7 @@ async function callAI(parts, maxTokens = 16000) {
       contents: [{ role: 'user', parts: nativeParts }],
       generationConfig: {
         temperature: 0.1,
-        maxOutputTokens: Math.min(maxTokens, 8192),
+        maxOutputTokens: maxTokens,
         responseMimeType: 'application/json',
       },
     };
@@ -509,10 +509,10 @@ async function extractByIndex(pages, paperTitle, totalQuestions, optCount, chunk
 
     onProgress?.({ chunk: i + 1, totalChunks: batches.length, questionsExtracted: totalExtracted, totalQuestions });
 
-    // 15s between chunks to stay within rate limits
+    // 3s between chunks — flash-lite has generous rate limits
     if (i < batches.length - 1) {
-      console.log(`[API] Waiting 15s before next chunk...`);
-      await sleep(15000);
+      console.log(`[API] Waiting 3s before next chunk...`);
+      await sleep(3000);
     }
   }
 
