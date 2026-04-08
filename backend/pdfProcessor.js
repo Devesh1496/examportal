@@ -659,4 +659,43 @@ async function processPdf(pdfUrl, paperTitle, onProgress) {
   }
 }
 
-module.exports = { processPdf, processImages, downloadPdf, pdfToImages, extractQuestionsWithClaude, pdfToBase64Images, cleanupFile, cleanupPagesDir };
+// ─── EXTRACT ANSWER KEY FROM PDF ─────────────────────────────
+async function extractAnswerKeyFromPdf(pdfPath, totalQuestions) {
+  console.log(`[AnswerKey] Extracting answer key from PDF for ${totalQuestions} questions...`);
+  const pages = await pdfToImages(pdfPath);
+
+  const promptText = `You are looking at an answer key PDF for an exam paper with ${totalQuestions} questions.
+
+Extract ALL answers from this answer key. The answers are typically shown as question number → correct option letter (A/B/C/D/E).
+
+Return ONLY a valid JSON object with this structure — no markdown, no explanation:
+{
+  "answers": {
+    "1": 0,
+    "2": 2,
+    "3": 1
+  }
+}
+
+RULES:
+- Keys are question numbers as strings ("1", "2", etc.)
+- Values are 0-indexed: A=0, B=1, C=2, D=3, E=4
+- Extract answers for ALL ${totalQuestions} questions
+- If an answer shows a letter like "C", convert to index (C=2)
+- If an answer shows a number like "3", that means option C (3rd option = index 2). Be careful: some keys show 1-indexed numbers (1=A, 2=B, 3=C, 4=D)
+- Read carefully — answer keys can be in tables, grids, columns, or lists
+- Return ONLY valid JSON`;
+
+  const parts = buildPartsWithPages(pages, promptText);
+  const raw = await callAI(parts, 8000);
+  const parsed = parseResponse(raw);
+
+  if (parsed && parsed.answers) {
+    console.log(`[AnswerKey] Extracted ${Object.keys(parsed.answers).length} answers from PDF`);
+    return parsed.answers;
+  }
+
+  throw new Error('Could not extract answers from the PDF');
+}
+
+module.exports = { processPdf, processImages, downloadPdf, pdfToImages, extractQuestionsWithClaude, pdfToBase64Images, cleanupFile, cleanupPagesDir, extractAnswerKeyFromPdf };

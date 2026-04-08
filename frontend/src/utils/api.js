@@ -41,6 +41,19 @@ export const api = {
   // Answer Key (Admin)
   getAnswerKey:     (id)          => req(`/papers/${id}/answers`),
   uploadAnswerKey:  (id, answers) => req(`/papers/${id}/answer-key`, { method: 'POST', body: { answers } }),
+  extractAnswerKeyPdf: async (id, file) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${BASE}/papers/${id}/answer-key/extract-pdf`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${session?.access_token}` },
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  },
 
   // Subject Quiz
   getSubjects:    ()                          => req('/subjects'),

@@ -9,7 +9,7 @@ const { v4: uuidv4 } = require('uuid');
 
 const { supabase } = require('./supabaseClient');
 const { scrapeAll, scrapeCustomUrl } = require('./scraper');
-const { processPdf, processImages, pdfToBase64Images, cleanupFile, cleanupPagesDir } = require('./pdfProcessor');
+const { processPdf, processImages, pdfToBase64Images, cleanupFile, cleanupPagesDir, extractAnswerKeyFromPdf } = require('./pdfProcessor');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -41,6 +41,17 @@ const authenticate = async (req, res, next) => {
   if (error || !user) return res.status(401).json({ error: 'Invalid token' });
 
   req.user = user;
+
+  // Auto-create profile if missing (trigger may not exist)
+  const { data: profile } = await supabase.from('profiles').select('id').eq('id', user.id).single();
+  if (!profile) {
+    await supabase.from('profiles').insert({
+      id: user.id,
+      email: user.email,
+      role: 'candidate',
+    }).catch(() => {}); // ignore if already exists
+  }
+
   next();
 };
 
@@ -554,6 +565,30 @@ app.post('/api/papers/:id/answer-key', authenticate, isAdmin, async (req, res) =
   } catch (err) {
     console.error('[AnswerKey] Error:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/papers/:id/answer-key/extract-pdf — extract answer key from uploaded PDF (ADMIN)
+app.post('/api/papers/:id/answer-key/extract-pdf', authenticate, isAdmin, upload.single('file'), async (req, res) => {
+  let pdfPath = null;
+  try {
+    const paperId = req.params.id;
+    if (!req.file) return res.status(400).json({ error: 'PDF file is required' });
+
+    pdfPath = `${req.file.path}.pdf`;
+    fs.renameSync(req.file.path, pdfPath);
+
+    // Get total questions for this paper
+    const { data: paper } = await supabase.from('papers').select('total_q').eq('id', paperId).single();
+    const totalQ = paper?.total_q || 100;
+
+    const answers = await extractAnswerKeyFromPdf(pdfPath, totalQ);
+    res.json({ answers, total: Object.keys(answers).length });
+  } catch (err) {
+    console.error('[AnswerKey PDF] Error:', err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    if (pdfPath) { cleanupFile(pdfPath); cleanupPagesDir(pdfPath); }
   }
 });
 

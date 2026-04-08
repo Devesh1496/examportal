@@ -1,11 +1,13 @@
 // hooks/useExam.js — All exam state: timer, answers, scoring, navigation, pause/resume
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../utils/api';
+import { supabase } from '../supabaseClient';
 
-// Storage key for paused quiz state
-function storageKey(paper) {
+// Storage key for paused quiz state — includes user ID so each user has their own state
+function storageKey(paper, userId) {
   if (!paper) return null;
-  return paper.id ? `exam_state_${paper.id}` : `exam_state_${paper.title}`;
+  const uid = userId || 'anon';
+  return paper.id ? `exam_state_${uid}_${paper.id}` : `exam_state_${uid}_${paper.title}`;
 }
 
 // noSave=true → subject quiz mode (unlimited attempts, no tracking)
@@ -21,11 +23,19 @@ export function useExam(paper, questions, { noSave = false } = {}) {
   const timerRef = useRef(null);
   const qStartRef = useRef(Date.now());    // when current question was entered
   const qTimesRef = useRef({});            // { qIndex: totalMs }
+  const [userId, setUserId] = useState(null);
+
+  // Get current user ID
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user?.id) setUserId(session.user.id);
+    });
+  }, []);
 
   // ── Init timer (or restore from saved state) ──
   useEffect(() => {
-    if (!paper) return;
-    const key = storageKey(paper);
+    if (!paper || !userId) return;
+    const key = storageKey(paper, userId);
     if (key) {
       try {
         const saved = JSON.parse(localStorage.getItem(key));
@@ -48,7 +58,7 @@ export function useExam(paper, questions, { noSave = false } = {}) {
     const mins  = parseFloat(dur.match(/(\d+\.?\d*)\s*m/)?.[1] || 0);
     const secs  = Math.round((hrs * 60 + mins) * 60) || 3 * 3600;
     setTimeLeft(secs);
-  }, [paper]);
+  }, [paper, userId]);
 
   // ── Countdown ──
   useEffect(() => {
@@ -64,8 +74,8 @@ export function useExam(paper, questions, { noSave = false } = {}) {
 
   // ── Auto-save to localStorage on state change ──
   useEffect(() => {
-    if (submitted || !paper) return;
-    const key = storageKey(paper);
+    if (submitted || !paper || !userId) return;
+    const key = storageKey(paper, userId);
     if (!key) return;
     const state = {
       answers, marked, revealed, currentQ, timeLeft,
@@ -120,7 +130,7 @@ export function useExam(paper, questions, { noSave = false } = {}) {
     setSubmitted(true);
 
     // Clear saved state
-    const key = storageKey(paper);
+    const key = storageKey(paper, userId);
     if (key) try { localStorage.removeItem(key); } catch {}
 
     // Calculate score
@@ -204,24 +214,24 @@ export function useExam(paper, questions, { noSave = false } = {}) {
     setTimeLeft(secs);
 
     // Clear saved state
-    const key = storageKey(paper);
+    const key = storageKey(paper, userId);
     if (key) try { localStorage.removeItem(key); } catch {}
-  }, [paper]);
+  }, [paper, userId]);
 
   // ── Check if there's a paused session ──
   const hasSavedState = useCallback(() => {
-    const key = storageKey(paper);
+    const key = storageKey(paper, userId);
     if (!key) return false;
     try {
       const saved = JSON.parse(localStorage.getItem(key));
       return !!(saved && saved.answers && Object.keys(saved.answers).length > 0);
     } catch { return false; }
-  }, [paper]);
+  }, [paper, userId]);
 
   const clearSavedState = useCallback(() => {
-    const key = storageKey(paper);
+    const key = storageKey(paper, userId);
     if (key) try { localStorage.removeItem(key); } catch {}
-  }, [paper]);
+  }, [paper, userId]);
 
   const progress = questions.length > 0
     ? Math.round(((currentQ + 1) / questions.length) * 100)

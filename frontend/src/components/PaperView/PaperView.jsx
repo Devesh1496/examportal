@@ -148,7 +148,9 @@ function AnswerKeyModal({ paperId, questions, onClose, onSaved }) {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [bulkText, setBulkText] = useState('');
-  const [mode, setMode] = useState('grid'); // 'grid' | 'bulk'
+  const [mode, setMode] = useState('grid'); // 'grid' | 'bulk' | 'pdf'
+  const [pdfFile, setPdfFile] = useState(null);
+  const [extracting, setExtracting] = useState(false);
 
   const handleChange = (qNum, val) => {
     setAnswers(prev => ({ ...prev, [qNum]: val }));
@@ -197,6 +199,30 @@ function AnswerKeyModal({ paperId, questions, onClose, onSaved }) {
     }
   };
 
+  const handlePdfExtract = async () => {
+    if (!pdfFile) return setError('Please select a PDF file');
+    setExtracting(true);
+    setError('');
+    setSuccess('');
+    try {
+      const result = await api.extractAnswerKeyPdf(paperId, pdfFile);
+      if (result.answers) {
+        // Convert string keys to numbers and merge
+        const parsed = {};
+        for (const [qNum, ans] of Object.entries(result.answers)) {
+          parsed[parseInt(qNum)] = parseInt(ans);
+        }
+        setAnswers(prev => ({ ...prev, ...parsed }));
+        setMode('grid');
+        setSuccess(`Extracted ${result.total} answers from PDF`);
+      }
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setExtracting(false);
+    }
+  };
+
   // Count changes from AI answers
   const changes = questions.filter(q => {
     const newAns = answers[q.q_number];
@@ -209,6 +235,7 @@ function AnswerKeyModal({ paperId, questions, onClose, onSaved }) {
         <div className="ak-tabs">
           <button className={`ak-tab${mode==='grid'?' active':''}`} onClick={() => setMode('grid')}>Grid Entry</button>
           <button className={`ak-tab${mode==='bulk'?' active':''}`} onClick={() => setMode('bulk')}>Paste Text</button>
+          <button className={`ak-tab${mode==='pdf'?' active':''}`} onClick={() => setMode('pdf')}>Extract from PDF</button>
         </div>
 
         {mode === 'bulk' && (
@@ -221,6 +248,27 @@ function AnswerKeyModal({ paperId, questions, onClose, onSaved }) {
               rows={10}
             />
             <button className="btn btn-primary" onClick={parseBulkText}>Parse Answers</button>
+          </div>
+        )}
+
+        {mode === 'pdf' && (
+          <div className="ak-bulk">
+            <p style={{ margin: '0 0 12px', color: '#666', fontSize: 14 }}>
+              Upload the answer key PDF and AI will extract all answers automatically.
+            </p>
+            <input
+              type="file"
+              accept=".pdf"
+              onChange={e => setPdfFile(e.target.files[0])}
+              style={{ marginBottom: 12 }}
+            />
+            <button
+              className="btn btn-primary"
+              onClick={handlePdfExtract}
+              disabled={extracting || !pdfFile}
+            >
+              {extracting ? 'Extracting answers…' : 'Extract Answers from PDF'}
+            </button>
           </div>
         )}
 
