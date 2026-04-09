@@ -205,3 +205,33 @@
   font-size: 14px; color: var(--text2); font-weight: 600;
   text-align: center;
 }
+
+/* ── MOBILE ── */
+@media (max-width: 768px) {
+  .home { padding: 1.5rem 0.75rem 3rem; }
+  .home-header { margin-bottom: 2rem; gap: 1rem; }
+  .home-logo-icon { width: 42px; height: 42px; font-size: 20px; border-radius: 14px; }
+  .home-logo-title { font-size: 22px; }
+  .home-logo-sub { font-size: 11px; }
+  .home-logo { gap: 0.75rem; }
+  .home-header-actions { gap: 0.5rem; }
+  .home-header-actions .btn { padding: 8px 12px; font-size: 12px; }
+
+  .home-stats { grid-template-columns: repeat(2, 1fr); gap: 0.75rem; margin-bottom: 2rem; }
+
+  .home-list-header { margin-bottom: 1.25rem; gap: 1rem; }
+  .home-list-title { font-size: 18px; }
+  .home-list-header .ui-input-wrap { width: 100%; }
+
+  .home-papers { grid-template-columns: 1fr; gap: 1rem; }
+  .paper-card { padding: 1.25rem; gap: 1rem; }
+  .paper-card-icon { width: 40px; height: 40px; font-size: 20px; border-radius: 10px; }
+  .paper-card-title { font-size: 16px; }
+  .paper-card-meta { font-size: 12px; }
+  .paper-card-top { gap: 0.75rem; }
+  .paper-card-actions { gap: 0.75rem; }
+  .paper-card-actions .btn { padding: 10px; font-size: 12px; }
+
+  .add-modal-hint { font-size: 13px; padding: 1rem; }
+  .add-file-label { padding: 1rem; }
+}

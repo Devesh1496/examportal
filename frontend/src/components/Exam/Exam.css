@@ -62,7 +62,9 @@
   transition:all .2s ease;
 }
 .qdot:hover { transform: scale(1.1); border-color: var(--accent); color: var(--accent); }
-.qdot.cur    { border-color:var(--accent); color:var(--accent); background:#fff; font-weight: 900; }
+.qdot.cur    { border-color:var(--accent); color:#fff; background:var(--accent); font-weight: 900; }
+.qdot.ans    { background:var(--accent-bg); border-color:var(--accent); color:var(--accent); }
+.qdot.marked { background:rgba(245,158,11,0.15); border-color:var(--amber); color:var(--amber); }
 
 /* main section - ENABLE VERTICAL SCROLLING */
 .exam-main { 
@@ -220,12 +222,173 @@
 /* ── Results actions with reattempt ── */
 .results-actions { display: flex; gap: 0.75rem; padding: 1.5rem 2.5rem; justify-content: center; flex-wrap: wrap; }
 
+/* ── Mobile Question Nav Strip ── */
+.mobile-nav-strip { display: none; }
+.mobile-nav-toggle {
+  display: flex; align-items: center; gap: 0.75rem; width: 100%;
+  padding: 8px 12px; background: var(--bg2); border: 1px solid var(--bg4);
+  font-size: 13px; font-weight: 700; color: var(--text);
+  cursor: pointer;
+}
+.mobile-nav-icon { font-size: 16px; }
+.mobile-nav-count { margin-left: auto; font-size: 12px; color: var(--green); font-weight: 700; }
+.mobile-nav-drawer {
+  background: #fff; border: 1px solid var(--bg4); border-top: none;
+  padding: 0.75rem; max-height: 220px; overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.08);
+}
+.mobile-nav-legend {
+  display: flex; gap: 12px; font-size: 11px; color: var(--text3); font-weight: 700;
+  margin-bottom: 8px; padding: 0 4px;
+}
+.mobile-nav-legend span { display: flex; align-items: center; gap: 4px; }
+.mobile-nav-dots {
+  display: grid; grid-template-columns: repeat(10, 1fr); gap: 5px;
+}
+.mobile-nav-dots .qdot { border-radius: 8px; font-size: 11px; }
+
+/* ── Review Quiz UI ── */
+.review-quiz { display: flex; flex-direction: column; max-height: 75vh; overflow: hidden; }
+
+.review-filters {
+  display: flex; gap: 4px; padding: 1rem 1.5rem 0; flex-wrap: wrap;
+}
+.rf-btn {
+  padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 700;
+  background: var(--bg3); color: var(--text3); border: 2px solid transparent;
+  cursor: pointer; transition: all 0.2s;
+}
+.rf-btn:hover { color: var(--text); }
+.rf-btn.active { background: var(--accent-bg); color: var(--accent); border-color: var(--accent); }
+.rf-btn.rf-correct.active { background: rgba(16,185,129,0.1); color: var(--green); border-color: var(--green); }
+.rf-btn.rf-wrong.active { background: rgba(239,68,68,0.1); color: var(--red); border-color: var(--red); }
+.rf-btn.rf-skip.active { background: var(--bg3); color: var(--text2); border-color: var(--text3); }
+
+.review-dots-wrap {
+  padding: 0.75rem 1.5rem; overflow-x: auto;
+}
+.review-dots {
+  display: flex; gap: 6px; flex-wrap: wrap;
+}
+.review-qdot {
+  width: 36px; height: 36px; border-radius: 10px; font-size: 11px;
+}
+.review-qdot.correct { background: rgba(16,185,129,0.15); border-color: var(--green); color: var(--green); }
+.review-qdot.wrong { background: rgba(239,68,68,0.15); border-color: var(--red); color: var(--red); }
+.review-qdot.skip { background: var(--bg3); border-color: var(--bg4); color: var(--text3); }
+.review-qdot.cur { color: #fff !important; }
+.review-qdot.cur.correct { background: var(--green); }
+.review-qdot.cur.wrong { background: var(--red); }
+.review-qdot.cur.skip { background: var(--text3); }
+
+.review-card-wrap {
+  flex: 1; overflow-y: auto; padding: 0 1.5rem 1rem;
+}
+
+.review-status-banner {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.75rem 1rem; border-radius: var(--r-lg); margin-bottom: 0.75rem;
+  font-size: 14px; font-weight: 700;
+}
+.review-status-banner.correct { background: rgba(16,185,129,0.1); color: var(--green); }
+.review-status-banner.wrong { background: rgba(239,68,68,0.1); color: var(--red); }
+.review-status-banner.skip { background: var(--bg3); color: var(--text3); }
+.review-q-counter { font-size: 12px; font-weight: 600; opacity: 0.7; }
+
+.review-q-card { animation: none; }
+
+/* Review option states */
+.opt.review-opt-item { cursor: default; position: relative; }
+.opt.review-opt-item.correct { border-color: var(--green); background: rgba(16,185,129,0.08); }
+.opt.review-opt-item.correct .opt-letter { background: var(--green); color: #fff; }
+.opt.review-opt-item.wrong { border-color: var(--red); background: rgba(239,68,68,0.08); }
+.opt.review-opt-item.wrong .opt-letter { background: var(--red); color: #fff; }
+
+.opt-badge {
+  margin-left: auto; font-size: 12px; font-weight: 800; padding: 2px 8px; border-radius: 6px;
+}
+.correct-badge { color: var(--green); background: rgba(16,185,129,0.15); }
+.wrong-badge { color: var(--red); background: rgba(239,68,68,0.15); }
+
+.q-correct-note {
+  margin-top: 1rem; padding: 0.75rem 1rem; border-radius: var(--r-lg);
+  background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.2);
+  font-size: 14px; color: var(--green); font-weight: 700;
+}
+
+.review-nav {
+  display: flex; gap: 0.75rem; padding: 1rem 1.5rem; justify-content: space-between;
+  border-top: 1px solid var(--bg4);
+}
+
 /* responsive */
 @media (max-width: 1000px) {
   .exam-body { flex-direction: column; padding: 1rem; overflow-y: auto; }
   .exam-sidebar { width: 100%; display: none; }
+  .mobile-nav-strip { display: block; }
   .q-card { padding: 1.5rem 1.25rem; }
   .q-card::before { left: 0.75rem; }
   .q-text { font-size: 18px; }
   .opt { padding: 0.75rem 1rem; font-size: 14px; }
+}
+
+@media (max-width: 768px) {
+  .exam-topbar { padding: 0.5rem 0.75rem; gap: 0.5rem; flex-wrap: wrap; }
+  .exam-title { font-size: 13px; }
+  .exam-subtitle { display: none; } /* shown in mobile nav strip instead */
+  .exam-title-wrap { display: none; } /* title hidden on mobile, nav strip shows Q count */
+  .exam-topbar-right { gap: 0.5rem; }
+  .exam-topbar-right .btn.btn-ghost { display: none; } /* hide Full View on mobile */
+  .exam-timer { font-size: 13px; padding: 6px 12px; gap: 6px; }
+  .exam-back { padding: 6px 10px; font-size: 12px; }
+
+  .exam { height: auto; min-height: 100vh; overflow: visible; display: block; }
+  .exam-body { padding: 0.75rem; gap: 0.75rem; overflow: visible; display: block; }
+  .exam-main { overflow: visible; padding-bottom: 1rem; }
+  .q-card { padding: 1rem; background-size: 100% 28px; }
+  .q-card::before { left: 0.5rem; }
+  .q-meta { margin-bottom: 1rem; gap: 0.5rem; }
+  .q-num { font-size: 18px; }
+  .q-sec-badge { font-size: 10px; padding: 3px 8px; }
+  .q-text { font-size: 16px; margin-bottom: 1.25rem; }
+  .q-passage { padding: 1rem; font-size: 15px; margin-bottom: 1rem; }
+  .q-options { gap: 0.5rem; }
+  .opt { padding: 0.75rem; font-size: 13px; gap: 0.75rem; }
+  .opt-letter { width: 28px; height: 28px; font-size: 12px; border-radius: 8px; }
+  .exam-nav { gap: 0.75rem; padding: 0.75rem 0; }
+  .exam-nav .btn { padding: 10px 16px; font-size: 13px; }
+
+  /* results mobile */
+  .results-panel { border-radius: var(--r-lg); }
+  .results-hero { flex-direction: column; gap: 1.5rem; padding: 1.5rem; text-align: center; }
+  .score-ring { width: 100px; height: 100px; }
+  .results-grade { font-size: 22px; }
+  .results-stats { grid-template-columns: repeat(2, 1fr); padding: 1rem; gap: 0.75rem; }
+  .rs-num { font-size: 22px; }
+  .results-tabs { padding: 0 0.75rem; }
+  .rtab { padding: 0.75rem; font-size: 13px; }
+  .results-actions { padding: 1rem; gap: 0.5rem; }
+  .results-actions .btn { padding: 10px 14px; font-size: 13px; }
+
+  /* analysis mobile */
+  .analysis-tab { padding: 1rem; }
+  .analysis-overview { grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
+  .ao-value { font-size: 18px; }
+  .rs-sec-name { width: 100px; font-size: 12px; }
+  .review-list { padding: 1rem; max-height: 50vh; }
+
+  .exam-resumed-banner { font-size: 12px; padding: 0.5rem 1rem; gap: 0.5rem; }
+
+  /* Mobile question nav strip refinements */
+  .mobile-nav-dots { grid-template-columns: repeat(8, 1fr); }
+
+  /* review on mobile */
+  .review-filters { padding: 0.75rem; gap: 3px; }
+  .rf-btn { padding: 5px 10px; font-size: 12px; }
+  .review-dots-wrap { padding: 0.5rem 0.75rem; }
+  .review-dots { gap: 4px; }
+  .review-qdot { width: 30px; height: 30px; font-size: 10px; border-radius: 8px; }
+  .review-card-wrap { padding: 0 0.75rem 0.75rem; }
+  .review-nav { padding: 0.75rem; }
+  .review-nav .btn { padding: 8px 12px; font-size: 13px; }
 }

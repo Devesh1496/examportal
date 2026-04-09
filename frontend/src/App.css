@@ -144,3 +144,17 @@
   overflow-x: auto;
   font-family: 'Courier New', monospace;
 }
+
+/* ── MOBILE ── */
+@media (max-width: 768px) {
+  .app-topbar { padding: 0.5rem 0.75rem; gap: 0.5rem; }
+  .app-brand-name { font-size: 14px; }
+  .app-brand-sub { display: none; }
+  .app-brand-icon { width: 32px; height: 32px; font-size: 15px; border-radius: 8px; }
+  .app-tabs { gap: 2px; padding: 3px; }
+  .app-tab { padding: 6px 10px; font-size: 12px; }
+  .app-topbar-right .btn-sm { padding: 5px 8px; font-size: 11px; }
+  .app-topbar-right .btn-sm:first-child { display: none; } /* hide Scan on mobile */
+  .app-tab-content { padding: 1rem 0.75rem; }
+  .app-avatar { width: 30px; height: 30px; font-size: 12px; }
+}

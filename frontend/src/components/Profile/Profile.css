@@ -101,3 +101,21 @@
   border-top: 1px solid var(--border);
   display: flex; justify-content: flex-end;
 }
+
+/* ── MOBILE ── */
+@media (max-width: 768px) {
+  .profile-panel { max-width: 100%; border-radius: var(--r-lg); }
+  .profile-overlay { align-items: flex-end; padding: 0; }
+  .profile-panel { border-radius: var(--r-xl) var(--r-xl) 0 0; max-height: 85vh; }
+  .profile-header { padding: 1.25rem 1rem; }
+  .profile-avatar { width: 42px; height: 42px; font-size: 18px; }
+  .profile-name { font-size: 16px; }
+  .profile-email { font-size: 12px; }
+  .ps-val { font-size: 22px; }
+  .ps-lbl { font-size: 10px; }
+  .ps-card { padding: 1rem 0.5rem; }
+  .profile-history { padding: 1rem; }
+  .ph-paper { font-size: 13px; }
+  .ph-score { font-size: 14px; }
+  .ph-details { gap: 0.5rem; }
+}

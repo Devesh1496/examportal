@@ -153,3 +153,13 @@
 .auth-footer span:hover {
   filter: brightness(1.2);
 }
+
+/* ── MOBILE ── */
+@media (max-width: 768px) {
+  .auth-card { padding: 1.75rem 1.25rem; border-radius: 18px; }
+  .auth-logo { width: 44px; height: 44px; font-size: 22px; border-radius: 10px; }
+  .auth-header h1 { font-size: 20px; }
+  .auth-header p { font-size: 13px; }
+  .form-group input { padding: 10px 14px; font-size: 14px; }
+  .btn-block { padding: 10px; font-size: 14px; }
+}

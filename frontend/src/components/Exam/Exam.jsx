@@ -173,6 +173,7 @@ export default function Exam({ paper, questions, onFinish, onBack, onToggleView,
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [reviewing, setReviewing] = useState(false);
   const [showResumeBanner, setShowResumeBanner] = useState(true);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   const exam = useExam(paper, questions, { noSave });
   const { currentQ, answers, marked, revealed, timeLeft, submitted, result, resumed,
@@ -247,6 +248,36 @@ export default function Exam({ paper, questions, onFinish, onBack, onToggleView,
       {/* progress bar */}
       <div className="exam-progress">
         <ProgressBar value={progress} />
+      </div>
+
+      {/* ── MOBILE NAV STRIP ── */}
+      <div className="mobile-nav-strip">
+        <button className="mobile-nav-toggle" onClick={() => setMobileNavOpen(!mobileNavOpen)}>
+          <span className="mobile-nav-icon">☰</span>
+          <span>Q{currentQ + 1}/{questions.length}</span>
+          <span className="mobile-nav-count">{answeredCount} done</span>
+        </button>
+        {mobileNavOpen && (
+          <div className="mobile-nav-drawer">
+            <div className="mobile-nav-legend">
+              <span><span className="leg ans"/>Answered</span>
+              <span><span className="leg marked"/>Marked</span>
+              <span><span className="leg cur"/>Current</span>
+            </div>
+            <div className="mobile-nav-dots">
+              {questions.map((_, i) => (
+                <QuestionDot
+                  key={i}
+                  index={i}
+                  current={currentQ}
+                  answered={answers[i] !== undefined}
+                  marked={!!marked[i]}
+                  onClick={() => { goTo(i); setMobileNavOpen(false); }}
+                />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="exam-body">
@@ -454,50 +485,163 @@ function ResultsOverlay({ result, paper, questions, answers, onReview, onBack, o
         )}
 
         {tab === 'review' && (
-          <div className="review-list">
-            {questions.map((q, i) => {
-              const chosen = answers[i];
-              const isCorrect = chosen === q.answer;
-              const isSkipped = chosen === undefined;
-              const statusCls = isSkipped ? 'skip' : isCorrect ? 'correct' : 'wrong';
-              const statusLabel = isSkipped ? '⊘ Skipped' : isCorrect ? '✓ Correct' : '✗ Wrong';
-              const LETTERS = ['A','B','C','D','E','F'];
-              const optEn = q.options_en || [];
-              const optHi = q.options_hi || [];
+          <ReviewQuizUI
+            questions={questions}
+            answers={answers}
+            lang={lang}
+            onBack={onBack}
+            subjectInfo={subjectInfo}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Review Quiz UI (navigable like a quiz) ───────────────────
+function ReviewQuizUI({ questions, answers, lang, onBack, subjectInfo }) {
+  const [reviewQ, setReviewQ] = useState(0);
+  const [filter, setFilter] = useState('all'); // 'all' | 'correct' | 'wrong' | 'skipped'
+  const LETTERS = ['A','B','C','D','E','F'];
+
+  // Build filtered index map
+  const filteredIndices = questions.map((q, i) => {
+    const chosen = answers[i];
+    const isSkipped = chosen === undefined || chosen === null;
+    const isCorrect = !isSkipped && q.answer !== null && chosen === q.answer;
+    const isWrong = !isSkipped && q.answer !== null && chosen !== q.answer;
+    if (filter === 'correct' && !isCorrect) return null;
+    if (filter === 'wrong' && !isWrong) return null;
+    if (filter === 'skipped' && !isSkipped) return null;
+    return i;
+  }).filter(i => i !== null);
+
+  const currentIdx = filteredIndices[reviewQ] ?? filteredIndices[0] ?? 0;
+  const q = questions[currentIdx];
+  if (!q) return null;
+
+  const chosen = answers[currentIdx];
+  const isSkipped = chosen === undefined || chosen === null;
+  const isCorrect = !isSkipped && q.answer !== null && chosen === q.answer;
+  const statusLabel = isSkipped ? '⊘ Skipped' : isCorrect ? '✓ Correct' : '✗ Wrong';
+  const statusCls = isSkipped ? 'skip' : isCorrect ? 'correct' : 'wrong';
+
+  const optEn = q.options_en || [];
+  const optHi = q.options_hi || [];
+
+  const getQStatus = (i) => {
+    const c = answers[i];
+    if (c === undefined || c === null) return 'skip';
+    if (questions[i].answer !== null && c === questions[i].answer) return 'correct';
+    return 'wrong';
+  };
+
+  const counts = { correct: 0, wrong: 0, skipped: 0 };
+  questions.forEach((q, i) => {
+    const s = getQStatus(i);
+    if (s === 'correct') counts.correct++;
+    else if (s === 'wrong') counts.wrong++;
+    else counts.skipped++;
+  });
+
+  return (
+    <div className="review-quiz">
+      {/* Filter tabs */}
+      <div className="review-filters">
+        <button className={`rf-btn${filter==='all'?' active':''}`} onClick={() => { setFilter('all'); setReviewQ(0); }}>
+          All ({questions.length})
+        </button>
+        <button className={`rf-btn rf-correct${filter==='correct'?' active':''}`} onClick={() => { setFilter('correct'); setReviewQ(0); }}>
+          ✓ {counts.correct}
+        </button>
+        <button className={`rf-btn rf-wrong${filter==='wrong'?' active':''}`} onClick={() => { setFilter('wrong'); setReviewQ(0); }}>
+          ✗ {counts.wrong}
+        </button>
+        <button className={`rf-btn rf-skip${filter==='skipped'?' active':''}`} onClick={() => { setFilter('skipped'); setReviewQ(0); }}>
+          ⊘ {counts.skipped}
+        </button>
+      </div>
+
+      {/* Question dots navigator */}
+      <div className="review-dots-wrap">
+        <div className="review-dots">
+          {filteredIndices.map((origIdx, fi) => (
+            <button
+              key={origIdx}
+              className={`qdot review-qdot ${getQStatus(origIdx)} ${fi === reviewQ ? 'cur' : ''}`}
+              onClick={() => setReviewQ(fi)}
+            >
+              {origIdx + 1}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Question card */}
+      <div className="review-card-wrap">
+        <div className={`review-status-banner ${statusCls}`}>
+          <span>{statusLabel}</span>
+          <span className="review-q-counter">Q{currentIdx + 1} of {questions.length}</span>
+        </div>
+
+        <div className="q-card review-q-card">
+          <div className="q-meta">
+            <span className="q-num">Q{q.q_number || currentIdx + 1}</span>
+            <span className="q-sec-badge">{q.section || 'General'}</span>
+          </div>
+
+          {q.has_passage && (q.passage_en || q.passage_hi) && (
+            <div className="q-passage">
+              {(lang === 'en' || lang === 'both') && q.passage_en && <p>{q.passage_en}</p>}
+              {(lang === 'hi' || lang === 'both') && q.passage_hi && q.passage_hi !== q.passage_en && <p className="hi">{q.passage_hi}</p>}
+            </div>
+          )}
+
+          <div className="q-text">
+            {(lang === 'en' || lang === 'both') && q.en && <div>{q.en}</div>}
+            {lang === 'both' && q.hi && q.hi !== q.en && <div className="q-text-hi hi">{q.hi}</div>}
+            {lang === 'hi' && <div className={q.hi ? 'hi' : ''}>{q.hi || q.en}</div>}
+          </div>
+
+          <div className="q-options">
+            {optEn.map((opt, j) => {
+              const isAns = j === q.answer;
+              const isChosen = j === chosen;
+              const cls = isAns ? 'correct' : (isChosen && !isAns) ? 'wrong' : '';
               return (
-                <div key={i} className={`review-item ${statusCls}`}>
-                  <div className="review-item-header">
-                    <span className={`review-status ${statusCls}`}>{statusLabel}</span>
-                    <span className="review-sec">{q.section}</span>
-                  </div>
-                  <div className="review-qtext">
-                    {(lang==='en'||lang==='both') && q.en && <div>{q.en}</div>}
-                    {lang==='both' && q.hi && q.hi!==q.en && <div className="hi review-hi">{q.hi}</div>}
-                    {lang==='hi' && <div className={q.hi?'hi':''}>{q.hi||q.en}</div>}
-                  </div>
-                  <div className="review-opts">
-                    {optEn.map((opt,j) => {
-                      const isAns = j === q.answer;
-                      const isChosen = j === chosen;
-                      const cls = isAns ? 'correct' : isChosen ? 'wrong' : '';
-                      return (
-                        <div key={j} className={`review-opt ${cls}`}>
-                          <span className="review-opt-letter">{LETTERS[j]}</span>
-                          <span>{opt}{optHi[j] && optHi[j]!==opt && lang!=='en' ? <span className="hi"> / {optHi[j]}</span> : null}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
+                <div key={j} className={`opt review-opt-item ${cls}`}>
+                  <span className="opt-letter">{LETTERS[j]}</span>
+                  <span className="opt-text">
+                    {(lang === 'en' || lang === 'both') && <span>{opt}</span>}
+                    {lang === 'both' && optHi[j] && optHi[j] !== opt && <span className="opt-hi hi"> / {optHi[j]}</span>}
+                    {lang === 'hi' && <span className={optHi[j] ? 'hi' : ''}>{optHi[j] || opt}</span>}
+                  </span>
+                  {isAns && <span className="opt-badge correct-badge">✓</span>}
+                  {isChosen && !isAns && <span className="opt-badge wrong-badge">✗ Your answer</span>}
                 </div>
               );
             })}
-            <div style={{padding:'1rem',textAlign:'center'}}>
-              <button className="btn btn-ghost" onClick={onBack}>
-                {subjectInfo ? '← All Subjects' : '← Back to Papers'}
-              </button>
-            </div>
           </div>
-        )}
+
+          {/* Correct answer note if wrong/skipped */}
+          {!isCorrect && q.answer !== null && (
+            <div className="q-correct-note">
+              ✓ Correct: <strong>{LETTERS[q.answer]}. {optEn[q.answer]}</strong>
+              {optHi[q.answer] && optHi[q.answer] !== optEn[q.answer] && lang !== 'en' && (
+                <span className="hi"> / {optHi[q.answer]}</span>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Navigation */}
+        <div className="review-nav">
+          <button className="btn btn-ghost" onClick={() => setReviewQ(Math.max(0, reviewQ - 1))} disabled={reviewQ === 0}>← Prev</button>
+          <button className="btn btn-ghost" onClick={onBack}>
+            {subjectInfo ? '← All Subjects' : '← Back'}
+          </button>
+          <button className="btn btn-primary" onClick={() => setReviewQ(Math.min(filteredIndices.length - 1, reviewQ + 1))} disabled={reviewQ >= filteredIndices.length - 1}>Next →</button>
+        </div>
       </div>
     </div>
   );

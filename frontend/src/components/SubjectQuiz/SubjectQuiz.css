@@ -119,3 +119,16 @@
   font-size: 12px; color: var(--text3); background: var(--bg3);
   padding: 0.75rem 1rem; border-radius: var(--r-lg); line-height: 1.5;
 }
+
+/* ── MOBILE ── */
+@media (max-width: 768px) {
+  .subj-page { padding: 0 0 2rem; }
+  .subj-header { flex-direction: column; gap: 0.75rem; margin-bottom: 1.25rem; }
+  .subj-title { font-size: 20px; }
+  .subj-sub { font-size: 13px; }
+  .subj-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 0.75rem; }
+  .subj-card { padding: 1rem; }
+  .subj-card-icon { font-size: 1.5rem; }
+  .subj-card-name { font-size: 15px; }
+  .qpicker-grid { grid-template-columns: repeat(2, 1fr); gap: 0.5rem; }
+}

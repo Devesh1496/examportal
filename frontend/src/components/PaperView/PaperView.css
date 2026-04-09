@@ -126,3 +126,33 @@
   .pv-sheet::before { left: 1.5rem; }
   .pv-q-text { font-size: 18px; }
 }
+
+@media (max-width: 768px) {
+  .pv-header { padding: 0.75rem 1rem; gap: 0.75rem; }
+  .pv-title { font-size: 15px; }
+  .pv-meta { font-size: 11px; margin-top: 2px; }
+  .pv-actions { gap: 0.5rem; }
+  .pv-actions .btn { padding: 6px 10px; font-size: 12px; }
+
+  .pv-content { padding: 1rem 0.5rem 3rem; }
+  .pv-sheet { padding: 1.5rem 1.25rem; border-radius: 0; }
+  .pv-sheet::before { left: 0.75rem; }
+
+  .pv-question { margin-bottom: 2.5rem; }
+  .pv-q-header { gap: 0.75rem; margin-bottom: 0.75rem; }
+  .pv-q-num { font-size: 18px; }
+  .pv-q-text { font-size: 16px; margin-bottom: 1rem; }
+  .pv-q-passage { padding: 1rem; font-size: 15px; margin-bottom: 1rem; }
+  .pv-opt { font-size: 14px; gap: 0.75rem; }
+  .pv-opt-letter { width: 24px; height: 24px; font-size: 11px; }
+
+  .pv-footer { margin-top: 3rem; padding-top: 1.5rem; }
+  .pv-footer-line { font-size: 15px; }
+
+  /* answer key modal mobile */
+  .ak-modal { padding: 0.5rem; }
+  .ak-tab { padding: 0.4rem 0.75rem; font-size: 12px; }
+  .ak-grid { max-height: 40vh; }
+  .ak-row { width: 100%; }
+  .ak-opt { width: 26px; height: 26px; font-size: 11px; }
+}
