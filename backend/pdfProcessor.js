@@ -529,6 +529,76 @@ async function extractByIndex(pages, paperTitle, totalQuestions, optCount, chunk
     if (!q.number) q.number = idx + 1;
   });
 
+  // ── VERIFICATION: find missing question numbers and retry ──
+  const extractedNums = new Set(allQuestions.map(q => q.number));
+  const missingNums = [];
+  for (let n = 1; n <= totalQuestions; n++) {
+    if (!extractedNums.has(n)) missingNums.push(n);
+  }
+
+  if (missingNums.length > 0 && missingNums.length <= totalQuestions * 0.5) {
+    console.log(`[API] Verification: ${missingNums.length} missing questions: ${missingNums.join(', ')}`);
+    onProgress?.({ chunk: batches.length, totalChunks: batches.length, questionsExtracted: allQuestions.length, totalQuestions, phase: 'verifying' });
+
+    // Group missing numbers into contiguous ranges for efficient retry
+    const retryRanges = [];
+    let rangeStart = missingNums[0], rangeEnd = missingNums[0];
+    for (let i = 1; i < missingNums.length; i++) {
+      if (missingNums[i] <= rangeEnd + 2) { // merge gaps of 1
+        rangeEnd = missingNums[i];
+      } else {
+        retryRanges.push({ start: rangeStart, end: rangeEnd });
+        rangeStart = missingNums[i];
+        rangeEnd = missingNums[i];
+      }
+    }
+    retryRanges.push({ start: rangeStart, end: rangeEnd });
+
+    console.log(`[API] Retrying ${retryRanges.length} range(s) for missing questions...`);
+    for (const range of retryRanges) {
+      try {
+        console.log(`[API] Retry: Q${range.start}-Q${range.end}...`);
+        await sleep(3000);
+        const promptText = buildExtractionPrompt(paperTitle, optCount, range.start, range.end, sections);
+        const parts = buildPartsWithPages(pages, promptText);
+        const raw = await callAI(parts, 16000);
+        const parsed = parseResponse(raw);
+        if (parsed && parsed.questions?.length > 0) {
+          const withImages = await processExtractedImages(parsed, pages);
+          // Only add questions that are actually missing (avoid duplicates)
+          for (const q of withImages.questions) {
+            if (!extractedNums.has(q.number)) {
+              allQuestions.push(q);
+              extractedNums.add(q.number);
+            }
+          }
+          if (parsed.passages) passages.push(...parsed.passages);
+          console.log(`[API] Retry Q${range.start}-Q${range.end}: recovered ${parsed.questions.length} questions`);
+        }
+      } catch (err) {
+        console.error(`[API] Retry Q${range.start}-Q${range.end} failed:`, err.message);
+      }
+    }
+
+    // Final check
+    const stillMissing = [];
+    for (let n = 1; n <= totalQuestions; n++) {
+      if (!extractedNums.has(n)) stillMissing.push(n);
+    }
+    if (stillMissing.length > 0) {
+      console.warn(`[API] After retry, still missing ${stillMissing.length} questions: ${stillMissing.join(', ')}`);
+    } else {
+      console.log(`[API] All ${totalQuestions} questions verified present after retry!`);
+    }
+  } else if (missingNums.length === 0) {
+    console.log(`[API] Verification: All ${totalQuestions} questions present!`);
+  } else {
+    console.warn(`[API] Too many missing (${missingNums.length}/${totalQuestions}), skipping retry`);
+  }
+
+  // Sort by question number
+  allQuestions.sort((a, b) => a.number - b.number);
+
   // Normalize section names to canonical list
   allQuestions.forEach(q => {
     q.section = normalizeSection(q.section);

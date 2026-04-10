@@ -84,8 +84,12 @@ async function pollJob(jobId, onStatus) {
       }
       // Show progress if available
       if (data.progress) {
-        const { chunk, totalChunks, questionsExtracted, totalQuestions } = data.progress;
-        onStatus?.(`Extracting chunk ${chunk}/${totalChunks} — ${questionsExtracted}/${totalQuestions} questions done`);
+        const { chunk, totalChunks, questionsExtracted, totalQuestions, phase } = data.progress;
+        if (phase === 'verifying') {
+          onStatus?.(`Verifying & retrying missing questions… ${questionsExtracted}/${totalQuestions} extracted`);
+        } else {
+          onStatus?.(`Extracting chunk ${chunk}/${totalChunks} — ${questionsExtracted}/${totalQuestions} questions done`);
+        }
       } else {
         onStatus?.(`AI extracting questions… ${mins}m ${secs}s elapsed`);
       }
@@ -125,12 +129,29 @@ async function extractViaBackend(images, paperTitle, onStatus) {
   return data;
 }
 
-// ─── PROCESS FROM URL ───────────────────────────────────────
+// ─── PROCESS FROM URL (server-side download + extraction) ───
 export async function processPaperClientSide(pdfUrl, paperTitle, onStatus) {
-  onStatus?.('Starting extraction…');
-  const arrayBuffer = await fetchPdfAsArrayBuffer(pdfUrl, onStatus);
-  const images = await renderPdfToImages(arrayBuffer, onStatus);
-  return await extractViaBackend(images, paperTitle, onStatus);
+  onStatus?.('Sending URL to server for download & extraction…');
+  const headers = await getAuthHeaders();
+
+  const res = await fetch(`${BASE}/papers/process-url`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ url: pdfUrl, title: paperTitle }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || 'Failed to start URL extraction');
+
+  if (data.jobId) {
+    onStatus?.('Server downloading PDF and extracting questions…');
+    const result = await pollJob(data.jobId, onStatus);
+    onStatus?.(`Extracted ${result.questions.length} questions!`);
+    return result;
+  }
+
+  onStatus?.(`Extracted ${data.questions.length} questions!`);
+  return data;
 }
 
 // ─── PROCESS FROM FILE — upload binary PDF, server renders + extracts ─

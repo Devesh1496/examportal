@@ -252,6 +252,48 @@ const upload = multer({
   },
 });
 
+// POST /api/papers/process-url — download PDF from URL server-side, render, and extract (ADMIN ONLY)
+app.post('/api/papers/process-url', authenticate, isAdmin, async (req, res) => {
+  try {
+    const { url: pdfUrl, title } = req.body;
+    if (!pdfUrl) return res.status(400).json({ error: 'PDF URL is required' });
+
+    if (!process.env.OPENROUTER_API_KEY && !process.env.GEMINI_API_KEY && !process.env.VERTEX_PROJECT_ID) {
+      return res.status(500).json({ error: 'No AI API key configured on the server' });
+    }
+
+    const paperTitle = title || pdfUrl.split('/').pop()?.replace(/\.pdf$/i, '').replace(/[-_]/g, ' ') || 'Question Paper';
+    const jobId = uuidv4();
+    jobs.set(jobId, { status: 'processing', title: paperTitle, startedAt: Date.now() });
+
+    console.log(`[URL ${jobId}] Started: "${paperTitle}" from ${pdfUrl}`);
+    res.json({ jobId, status: 'processing' });
+
+    // Process in background
+    const onProgress = (p) => {
+      const job = jobs.get(jobId);
+      if (job) jobs.set(jobId, { ...job, progress: p });
+    };
+
+    processPdf(pdfUrl, paperTitle, onProgress)
+      .then(extracted => {
+        if (!extracted || !extracted.questions?.length) {
+          jobs.set(jobId, { status: 'failed', error: 'No questions extracted from the PDF. The URL may not point to a valid exam paper.' });
+        } else {
+          console.log(`[URL ${jobId}] Done: ${extracted.questions.length} questions`);
+          jobs.set(jobId, { status: 'done', result: extracted });
+        }
+      })
+      .catch(err => {
+        console.error(`[URL ${jobId}] Error: ${err.message}`);
+        jobs.set(jobId, { status: 'failed', error: err.message });
+      });
+  } catch (err) {
+    console.error('[API] process-url error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // POST /api/papers/upload — accept multipart PDF, convert to images server-side
 app.post('/api/papers/upload', authenticate, upload.single('file'), async (req, res) => {
   try {
