@@ -232,7 +232,31 @@ async function downloadPdf(url) {
     console.warn(`[PDF] Axios failed: ${err.message}`);
   }
 
-  // Method 3: Playwright browser (last resort)
+  // Method 3: Cloudflare Worker proxy (for sites that block Google Cloud IPs like RSSB)
+  // Deploy cloudflare-pdf-proxy/worker.js to Cloudflare Workers and set PDF_PROXY_URL env var
+  if (process.env.PDF_PROXY_URL) {
+    try {
+      const proxyUrl = `${process.env.PDF_PROXY_URL.replace(/\/$/, '')}?url=${encodeURIComponent(url)}`;
+      console.log(`[PDF] Trying Cloudflare proxy: ${proxyUrl}`);
+      const res = await axios.get(proxyUrl, {
+        responseType: 'arraybuffer',
+        timeout: 60000,
+      });
+      const buffer = Buffer.from(res.data);
+      const header = buffer.subarray(0, 5).toString();
+      console.log(`[PDF] CF Proxy: ${buffer.length} bytes, Header: "${header}"`);
+      if (header.includes('%PDF')) {
+        fs.writeFileSync(filepath, buffer);
+        console.log(`[PDF] Saved via CF proxy: ${filepath}`);
+        return filepath;
+      }
+      console.warn('[PDF] CF proxy got response but not a PDF');
+    } catch (err) {
+      console.warn(`[PDF] CF proxy failed: ${err.message}`);
+    }
+  }
+
+  // Method 4: Playwright browser (last resort)
   return await downloadWithBrowser(url, filepath);
 }
 
