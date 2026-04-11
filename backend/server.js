@@ -161,79 +161,88 @@ app.get('/api/proxy/pdf', authenticate, isAdmin, async (req, res) => {
   const { url } = req.query;
   if (!url) return res.status(400).json({ error: 'URL is required' });
 
-  // Try 1: Direct axios download
+  // Try 1: curl — different TLS fingerprint, works with government/anti-bot sites
   try {
-    console.log(`[Proxy] Downloading PDF via axios: ${url}`);
+    const { execSync } = require('child_process');
+    const origin = new URL(url).origin;
+    const tmpFile = path.join(__dirname, 'data', 'uploads', `proxy_${uuidv4()}.pdf`);
+    console.log(`[Proxy] Trying curl: ${url}`);
+    execSync(
+      `curl -L --max-time 60 --silent --fail -o "${tmpFile}" ` +
+      `-H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" ` +
+      `-H "Referer: ${origin}/" -H "Accept: application/pdf,*/*" -k "${url}"`,
+      { stdio: 'pipe', timeout: 70000 }
+    );
+    if (fs.existsSync(tmpFile) && fs.statSync(tmpFile).size > 100) {
+      const buf = fs.readFileSync(tmpFile);
+      fs.unlinkSync(tmpFile);
+      if (buf.subarray(0, 5).toString().includes('%PDF')) {
+        console.log(`[Proxy] curl success: ${buf.length} bytes`);
+        res.set('Content-Type', 'application/pdf');
+        res.set('Content-Disposition', 'inline');
+        return res.send(buf);
+      }
+    }
+    console.warn('[Proxy] curl did not return a valid PDF');
+  } catch (curlErr) {
+    console.warn(`[Proxy] curl failed: ${curlErr.message}`);
+  }
+
+  // Try 2: axios
+  try {
+    console.log(`[Proxy] Trying axios: ${url}`);
     const response = await axios.get(url, {
       responseType: 'arraybuffer',
-      timeout: 120000,
-      maxContentLength: 100 * 1024 * 1024,
+      timeout: 60000,
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         'Accept': 'application/pdf,application/octet-stream,*/*',
-        'Accept-Language': 'en-US,en;q=0.9,hi;q=0.8',
         'Referer': new URL(url).origin + '/',
       },
-      httpsAgent: new https.Agent({
-        secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
-        rejectUnauthorized: false
-      })
+      httpsAgent: new https.Agent({ rejectUnauthorized: false })
     });
-    console.log(`[Proxy] axios success: ${response.data.byteLength} bytes`);
-    res.set('Content-Type', 'application/pdf');
-    res.set('Content-Disposition', 'inline');
-    return res.send(Buffer.from(response.data));
+    const buf = Buffer.from(response.data);
+    if (buf.subarray(0, 5).toString().includes('%PDF')) {
+      console.log(`[Proxy] axios success: ${buf.length} bytes`);
+      res.set('Content-Type', 'application/pdf');
+      res.set('Content-Disposition', 'inline');
+      return res.send(buf);
+    }
+    console.warn('[Proxy] axios response is not a PDF');
   } catch (axiosErr) {
-    console.log(`[Proxy] axios failed: ${axiosErr.message}, trying Playwright…`);
+    console.warn(`[Proxy] axios failed: ${axiosErr.message}`);
   }
 
-  // Try 2: Playwright browser download (handles anti-bot, JS redirects, etc.)
+  // Try 3: Playwright
   try {
     const { chromium } = require('playwright');
+    console.log(`[Proxy] Trying Playwright: ${url}`);
     const browser = await chromium.launch({ args: ['--no-sandbox', '--disable-setuid-sandbox'] });
     const context = await browser.newContext({
       userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
     });
     const page = await context.newPage();
-
-    // Intercept the PDF download
     let pdfBuffer = null;
-    page.on('download', async (download) => {
-      const path = await download.path();
-      if (path) {
-        const fs = require('fs');
-        pdfBuffer = fs.readFileSync(path);
-      }
-    });
-
-    // Also intercept network response
     page.on('response', async (resp) => {
       const ct = resp.headers()['content-type'] || '';
       if (ct.includes('pdf') || ct.includes('octet-stream')) {
         try { pdfBuffer = await resp.body(); } catch {}
       }
     });
-
-    await page.goto(url, { waitUntil: 'networkidle', timeout: 90000 }).catch(() => {});
-
-    // Wait a bit for download to complete
-    if (!pdfBuffer) await page.waitForTimeout(5000);
-
+    await page.goto(url, { waitUntil: 'commit', timeout: 90000 }).catch(() => {});
+    if (!pdfBuffer) pdfBuffer = await page.evaluate(() => null).catch(() => null);
     await browser.close();
-
     if (pdfBuffer && pdfBuffer.length > 100) {
       console.log(`[Proxy] Playwright success: ${pdfBuffer.length} bytes`);
       res.set('Content-Type', 'application/pdf');
       res.set('Content-Disposition', 'inline');
       return res.send(pdfBuffer);
     }
-    throw new Error('Playwright could not download the PDF');
   } catch (pwErr) {
-    console.error(`[Proxy] Playwright also failed: ${pwErr.message}`);
-    res.status(500).json({
-      error: `Could not download PDF from this website. The server may be blocking automated downloads. Try uploading the PDF file directly instead.`
-    });
+    console.error(`[Proxy] Playwright failed: ${pwErr.message}`);
   }
+
+  res.status(500).json({ error: 'Could not download PDF. Try downloading it manually and uploading the file instead.' });
 });
 
 // ─── In-memory job store for async processing ──────────────

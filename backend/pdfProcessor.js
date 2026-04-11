@@ -181,59 +181,87 @@ async function downloadPdf(url) {
   const filename = `${uuidv4()}.pdf`;
   const filepath = path.join(PDFS_DIR, filename);
 
+  // Method 1: curl — best compatibility with government/anti-bot sites
+  // Different TLS fingerprint than Node.js, handles redirects and SSL quirks well
+  try {
+    const origin = new URL(url).origin;
+    const { execSync } = require('child_process');
+    console.log(`[PDF] Trying curl...`);
+    execSync(
+      `curl -L --max-time 60 --silent --fail -o "${filepath}" ` +
+      `-H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" ` +
+      `-H "Referer: ${origin}/" ` +
+      `-H "Accept: application/pdf,*/*" ` +
+      `-k "${url}"`,
+      { stdio: 'pipe', timeout: 70000 }
+    );
+    if (fs.existsSync(filepath) && fs.statSync(filepath).size > 100) {
+      const header = fs.readFileSync(filepath).subarray(0, 5).toString();
+      if (header.includes('%PDF')) {
+        console.log(`[PDF] Saved via curl: ${filepath} (${fs.statSync(filepath).size} bytes)`);
+        return filepath;
+      }
+      fs.unlinkSync(filepath); // not a PDF, clean up
+    }
+    console.warn('[PDF] curl succeeded but file is not a valid PDF');
+  } catch (err) {
+    console.warn(`[PDF] curl failed: ${err.message}`);
+  }
+
+  // Method 2: axios
   try {
     const res = await axios.get(url, {
       responseType: 'arraybuffer',
-      timeout: 30000,
+      timeout: 60000,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/pdf,application/xhtml+xml,text/html;q=0.9,*/*;q=0.8'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'Accept': 'application/pdf,application/octet-stream,*/*',
+        'Referer': new URL(url).origin + '/',
       }
     });
-
     const buffer = Buffer.from(res.data);
     const header = buffer.subarray(0, 5).toString();
-    console.log(`[PDF] Axios Result: ${buffer.length} bytes, Header: "${header}"`);
-
-    // Verify PDF signature. If not %PDF, it's almost certainly an HTML error page.
-    if (header === '%PDF-' || header.includes('%PDF')) {
+    console.log(`[PDF] Axios: ${buffer.length} bytes, Header: "${header}"`);
+    if (header.includes('%PDF')) {
       fs.writeFileSync(filepath, buffer);
-      console.log(`[PDF] Saved via Axios: ${filepath}`);
+      console.log(`[PDF] Saved via axios: ${filepath}`);
       return filepath;
     }
-
-    console.warn(`[PDF] Signature mismatch (No %PDF found). Forcing browser download...`);
-    return await downloadWithBrowser(url, filepath);
+    console.warn('[PDF] Axios got response but not a PDF');
   } catch (err) {
-    console.warn(`[PDF] Axios download failed (${err.message}). Retrying with browser...`);
-    return await downloadWithBrowser(url, filepath);
+    console.warn(`[PDF] Axios failed: ${err.message}`);
   }
+
+  // Method 3: Playwright browser (last resort)
+  return await downloadWithBrowser(url, filepath);
 }
 
 async function downloadWithBrowser(url, filepath) {
   const { chromium } = require('playwright');
   console.log(`[PDF] Launching browser for: ${url}`);
-  const browser = await chromium.launch({ headless: true });
+  const browser = await chromium.launch({
+    headless: true,
+    args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-web-security']
+  });
   try {
-    const page = await browser.newPage();
-    // Simulate a real user session
-    await page.setExtraHTTPHeaders({ 'Accept-Language': 'en-US,en;q=0.9' });
-    
-    const response = await page.goto(url, { waitUntil: 'networkidle', timeout: 60000 });
+    const context = await browser.newContext({
+      userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      extraHTTPHeaders: { 'Accept-Language': 'en-US,en;q=0.9,hi;q=0.8' },
+    });
+    const page = await context.newPage();
+    const response = await page.goto(url, { waitUntil: 'commit', timeout: 90000 });
     const buffer = await response.body();
     const header = buffer.subarray(0, 5).toString();
-    console.log(`[PDF] Browser Result: ${buffer.length} bytes, Header: "${header}"`);
-
-    if (header === '%PDF-' || header.includes('%PDF')) {
+    console.log(`[PDF] Browser: ${buffer.length} bytes, Header: "${header}"`);
+    if (header.includes('%PDF')) {
       fs.writeFileSync(filepath, buffer);
-      console.log(`[PDF] Saved via Browser: ${filepath}`);
+      console.log(`[PDF] Saved via browser: ${filepath}`);
       return filepath;
     }
-
-    throw new Error(`File is not a valid PDF (Header: "${header}")`);
+    throw new Error(`Not a valid PDF (Header: "${header}")`);
   } catch (err) {
-    console.error(`[PDF] Browser download failed: ${err.message}`);
-    throw new Error('Failed to retrieve PDF. The website may be blocking automated access or the link is invalid.');
+    console.error(`[PDF] Browser failed: ${err.message}`);
+    throw new Error('Could not download the PDF. Try downloading it manually and uploading the file instead.');
   } finally {
     await browser.close();
   }
