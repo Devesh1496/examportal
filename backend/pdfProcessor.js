@@ -284,17 +284,28 @@ function buildPartsWithPages(pages, promptText) {
 // ─── PASS 0: METADATA EXTRACTION ─────────────────────────────
 async function getPaperMetadata(pages) {
   console.log('[API] Pass 0: Analyzing paper to count total questions & options...');
-  const promptText = `Analyze this entire exam paper carefully.
+
+  // IMPORTANT: Send ONLY the first 2 pages for metadata — cover + first content page.
+  // Sending all pages causes the AI to see so many questions it loses count.
+  const metaPages = pages.slice(0, Math.min(3, pages.length));
+
+  const promptText = `Analyze this exam paper cover page carefully.
 Return JSON ONLY with this exact structure — no markdown, no explanation:
 { "total_questions": 0, "options_per_question": 4, "sections": [{"name": "Section Name", "start": 1, "end": 30}] }
 
-Count the total number of questions in the entire paper.
-Count how many answer options/circles each question has. Include ALL options — if there is an option (E) for "Question not attempted" / "अनुत्तरित प्रश्न", count it too (e.g. A B C D E = 5 options, not 4).
-Identify sections/subjects in the paper with their question ranges. You MUST use ONLY these canonical section names:
+CRITICAL — for total_questions: Look for printed text like:
+- "No. of Questions in Booklet : 100"
+- "Total Questions: 150"
+- "प्रश्नों की संख्या : 100"
+- "कुल प्रश्न : 90"
+Read the EXACT number printed on the cover. Do NOT count questions yourself. Trust the printed number.
+
+Count how many answer options/circles each question has on the first content page. Include ALL options — if there is an option (E) for "Question not attempted" / "अनुत्तरित प्रश्न", count it too (e.g. A B C D E = 5 options, not 4).
+Identify sections/subjects in the paper with their question ranges from the cover/instructions. You MUST use ONLY these canonical section names:
 "India GK" | "Rajasthan GK" | "Reasoning" | "Hindi Grammar" | "English Grammar" | "Mathematics" | "Computer" | "Constitution" | "Science" | "Current Affairs" | "Rajasthan Current Affairs" | "World Geography" | "Women and Child Crime" | "New Criminal Laws" | "Educational Scenario" | "Local Self-Government" | "Animal Husbandry" | "History" | "Geography" | "Economy"
 Do NOT invent new names. Map the paper's sections to the closest canonical name above.`;
 
-  const parts = buildPartsWithPages(pages, promptText);
+  const parts = buildPartsWithPages(metaPages, promptText);
   try {
     const raw = await callAI(parts, 4000);
     let meta = parseResponse(raw);
@@ -528,6 +539,41 @@ async function extractByIndex(pages, paperTitle, totalQuestions, optCount, chunk
   allQuestions.forEach((q, idx) => {
     if (!q.number) q.number = idx + 1;
   });
+
+  // ── SANITY CHECK: do one extra pass on the last ~3 pages to catch questions
+  // that Pass 0 may have undercounted (e.g. Pass 0 says 90 but paper has 100)
+  // Only needed if extracted count roughly equals Pass 0's count (no obvious gap detected yet)
+  const maxExtractedNum = allQuestions.length > 0 ? Math.max(...allQuestions.map(q => q.number)) : 0;
+  if (maxExtractedNum > totalQuestions) {
+    console.warn(`[API] Pass 0 reported ${totalQuestions} but highest Q# is ${maxExtractedNum}. Adjusting.`);
+    totalQuestions = maxExtractedNum;
+  } else if (allQuestions.length >= totalQuestions - 2 && pages.length > 2) {
+    // Check the last few pages for any questions beyond totalQuestions
+    console.log(`[API] Checking last pages for questions beyond Q${totalQuestions}...`);
+    try {
+      await sleep(3000);
+      const lastPages = pages.slice(-4); // last 4 pages
+      const nextStart = totalQuestions + 1;
+      const nextEnd = totalQuestions + 20; // check up to 20 more
+      const promptText = buildExtractionPrompt(paperTitle, optCount, nextStart, nextEnd, sections);
+      const parts = buildPartsWithPages(lastPages, promptText);
+      const raw = await callAI(parts, 8000);
+      const parsed = parseResponse(raw);
+      if (parsed && parsed.questions?.length > 0) {
+        const beyondNums = parsed.questions.filter(q => q.number > totalQuestions);
+        if (beyondNums.length > 0) {
+          console.log(`[API] Found ${beyondNums.length} questions beyond Q${totalQuestions}: ${beyondNums.map(q=>q.number).join(', ')}`);
+          const withImages = await processExtractedImages(parsed, pages);
+          allQuestions.push(...withImages.questions.filter(q => q.number > totalQuestions));
+          totalQuestions = Math.max(...allQuestions.map(q => q.number));
+        } else {
+          console.log(`[API] Confirmed: no questions beyond Q${totalQuestions}`);
+        }
+      }
+    } catch (err) {
+      console.warn(`[API] End-of-paper check failed (non-critical): ${err.message}`);
+    }
+  }
 
   // ── VERIFICATION: find missing question numbers and retry ──
   const extractedNums = new Set(allQuestions.map(q => q.number));
