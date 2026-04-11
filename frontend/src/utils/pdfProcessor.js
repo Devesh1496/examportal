@@ -129,29 +129,51 @@ async function extractViaBackend(images, paperTitle, onStatus) {
   return data;
 }
 
-// ─── PROCESS FROM URL (server-side download + extraction) ───
+// ─── PROCESS FROM URL (server-side download + extraction, with client-side fallback) ───
 export async function processPaperClientSide(pdfUrl, paperTitle, onStatus) {
   onStatus?.('Sending URL to server for download & extraction…');
   const headers = await getAuthHeaders();
 
-  const res = await fetch(`${BASE}/papers/process-url`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ url: pdfUrl, title: paperTitle }),
-  });
+  try {
+    const res = await fetch(`${BASE}/papers/process-url`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ url: pdfUrl, title: paperTitle }),
+    });
 
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Failed to start URL extraction');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to start URL extraction');
 
-  if (data.jobId) {
-    onStatus?.('Server downloading PDF and extracting questions…');
-    const result = await pollJob(data.jobId, onStatus);
-    onStatus?.(`Extracted ${result.questions.length} questions!`);
-    return result;
+    if (data.jobId) {
+      onStatus?.('Server downloading PDF and extracting questions…');
+      const result = await pollJob(data.jobId, onStatus);
+      onStatus?.(`Extracted ${result.questions.length} questions!`);
+      return result;
+    }
+
+    onStatus?.(`Extracted ${data.questions.length} questions!`);
+    return data;
+  } catch (serverErr) {
+    // Server-side download failed (e.g. government site blocks Cloud Run IPs)
+    // Fall back to browser-side fetch — user's IP is not blocked
+    onStatus?.('Server download failed, trying browser-side download…');
+    let arrayBuffer;
+    try {
+      const pdfRes = await fetch(pdfUrl, { mode: 'cors' });
+      if (!pdfRes.ok) throw new Error(`HTTP ${pdfRes.status}`);
+      arrayBuffer = await pdfRes.arrayBuffer();
+    } catch (corsErr) {
+      // CORS or network block — nothing we can do automatically
+      throw new Error(
+        'Could not download the PDF from server or browser (site may block CORS). ' +
+        'Please download the PDF manually and upload it instead.'
+      );
+    }
+
+    // Render PDF pages to images in browser, then send to backend for AI extraction
+    const images = await renderPdfToImages(arrayBuffer, onStatus);
+    return await extractViaBackend(images, paperTitle, onStatus);
   }
-
-  onStatus?.(`Extracted ${data.questions.length} questions!`);
-  return data;
 }
 
 // ─── PROCESS FROM FILE — upload binary PDF, server renders + extracts ─
