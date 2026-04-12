@@ -235,3 +235,27 @@
   .add-modal-hint { font-size: 13px; padding: 1rem; }
   .add-file-label { padding: 1rem; }
 }
+
+/* ── Download-blocked error helper ── */
+.add-modal-error {
+  background: rgba(239,68,68,0.08);
+  border: 1px solid rgba(239,68,68,0.25);
+  color: var(--red, #ef4444);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.add-modal-error-help {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(239,68,68,0.2);
+  color: var(--text1);
+  font-size: 13px;
+}
+.add-modal-error-steps {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.6rem;
+  flex-wrap: wrap;
+}

@@ -188,7 +188,33 @@ function AddPaperModal({ open, onClose, onAdded }) {
           placeholder="e.g. RSSB Junior Engineer 2024"
         />
 
-        {error && <div className="add-modal-error">{error}</div>}
+        {error && (
+          <div className="add-modal-error">
+            {error}
+            {(error.toLowerCase().includes('download') || error.toLowerCase().includes('retrieve') || error.toLowerCase().includes('cors')) && mode === 'url' && url.trim() && (
+              <div className="add-modal-error-help">
+                <strong>This site blocks automated downloads.</strong> You can still add it in 2 steps:
+                <div className="add-modal-error-steps">
+                  <a
+                    className="btn btn-ghost btn-sm"
+                    href={url.trim()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    download
+                  >
+                    1. Download PDF ↓
+                  </a>
+                  <button
+                    className="btn btn-primary btn-sm"
+                    onClick={() => { switchMode('file'); }}
+                  >
+                    2. Upload it →
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
         {progress && (
           <div className="add-modal-progress-bar-wrap">
             <div className="add-modal-progress-bar">
