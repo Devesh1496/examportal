@@ -232,7 +232,38 @@ async function downloadPdf(url) {
     console.warn(`[PDF] Axios failed: ${err.message}`);
   }
 
-  // Method 3: Cloudflare Worker proxy (for sites that block Google Cloud IPs like RSSB)
+  // Method 3: Residential proxy via curl (for sites that block all datacenter IPs)
+  // Uses RESIDENTIAL_PROXY_URL env var — format: http://user:pass@host:port
+  // Free option: webshare.io (1GB/month free residential proxies)
+  if (process.env.RESIDENTIAL_PROXY_URL) {
+    try {
+      const origin = new URL(url).origin;
+      const { execSync } = require('child_process');
+      const proxyArg = `-x "${process.env.RESIDENTIAL_PROXY_URL}"`;
+      console.log(`[PDF] Trying residential proxy curl...`);
+      execSync(
+        `curl -L --max-time 60 --silent --fail ${proxyArg} -o "${filepath}" ` +
+        `-H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36" ` +
+        `-H "Referer: ${origin}/" ` +
+        `-H "Accept: application/pdf,*/*" ` +
+        `-k "${url}"`,
+        { stdio: 'pipe', timeout: 70000 }
+      );
+      if (fs.existsSync(filepath) && fs.statSync(filepath).size > 100) {
+        const header = fs.readFileSync(filepath).subarray(0, 5).toString();
+        if (header.includes('%PDF')) {
+          console.log(`[PDF] Saved via residential proxy: ${filepath} (${fs.statSync(filepath).size} bytes)`);
+          return filepath;
+        }
+        fs.unlinkSync(filepath);
+      }
+      console.warn('[PDF] Residential proxy curl: not a valid PDF');
+    } catch (err) {
+      console.warn(`[PDF] Residential proxy curl failed: ${err.message}`);
+    }
+  }
+
+  // Method 4: Cloudflare Worker proxy (for sites that block Google Cloud IPs like RSSB)
   // Deploy cloudflare-pdf-proxy/worker.js to Cloudflare Workers and set PDF_PROXY_URL env var
   if (process.env.PDF_PROXY_URL) {
     try {
